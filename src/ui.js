@@ -94,7 +94,10 @@ export function dashboardPage(metrics) {
           <div><span>RX</span><strong>${escapeHtml(formatBytes(metrics.totalRxBytes))}</strong></div>
           <div><span>TX</span><strong>${escapeHtml(formatBytes(metrics.totalTxBytes))}</strong></div>
           <div><span>Total</span><strong>${escapeHtml(formatBytes(metrics.totalTrafficBytes))}</strong></div>
-          <div><span>Avg Latency</span><strong>${escapeHtml(metrics.averageLatencyMs === null ? 'n/a' : `${metrics.averageLatencyMs}ms`)}</strong></div>
+          <div><span>Local</span><strong>${escapeHtml(formatLatency(metrics.averageLatencyMs))}</strong></div>
+          <div><span>CM</span><strong>${escapeHtml(formatLatency(metrics.probeLatency?.cm?.averageLatencyMs))}</strong></div>
+          <div><span>CU</span><strong>${escapeHtml(formatLatency(metrics.probeLatency?.cu?.averageLatencyMs))}</strong></div>
+          <div><span>CT</span><strong>${escapeHtml(formatLatency(metrics.probeLatency?.ct?.averageLatencyMs))}</strong></div>
         </div>
         ${trafficChart(metrics.nodeTraffic)}
       </div>
@@ -143,7 +146,7 @@ export function nodesPage(nodes, certs, editingNode = null) {
         node.id,
         node.name,
         `${escapeHtml(node.host)}:${escapeHtml(node.port)}<br><span class="muted">${escapeHtml(node.sni || '')}</span>`,
-        nodeStatus(node),
+        `${nodeStatus(node)}${nodeProbeStatus(node)}`,
         nodeTraffic(node),
         `<a href="/n/${encodeURIComponent(node.id)}">/n/${escapeHtml(node.id)}</a>`,
         `<code class="docker-command" data-docker-command data-config-path="/n/${encodeURIComponent(node.id)}"></code>`,
@@ -333,6 +336,22 @@ function nodeStatus(node) {
   return `<span class="status status-${escapeAttr(agent.state || 'waiting')}">${label}</span><br><span class="muted">${escapeHtml(reported)}${escapeHtml(latency)}</span>${error}`;
 }
 
+function nodeProbeStatus(node) {
+  const probes = node.agent?.probes || {};
+  const items = [
+    ['cm', 'CM'],
+    ['cu', 'CU'],
+    ['ct', 'CT'],
+  ].map(([key, label]) => {
+    const probe = probes[key];
+    const state = probe?.status || 'waiting';
+    const value = probe?.latencyMs === null || probe?.latencyMs === undefined ? 'n/a' : `${probe.latencyMs}ms`;
+    return `<span class="probe probe-${escapeAttr(state)}">${escapeHtml(label)} ${escapeHtml(value)}</span>`;
+  }).join('');
+
+  return `<div class="probe-list">${items}</div>`;
+}
+
 function nodeTraffic(node) {
   const agent = node.agent || {};
   const rx = formatBytes(agent.rxBytes || 0);
@@ -360,6 +379,10 @@ function formatBytes(value) {
     index += 1;
   }
   return `${number >= 10 || index === 0 ? number.toFixed(0) : number.toFixed(1)} ${units[index]}`;
+}
+
+function formatLatency(value) {
+  return value === null || value === undefined ? 'n/a' : `${value}ms`;
 }
 
 function table(headers, rows) {

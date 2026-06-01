@@ -205,6 +205,9 @@ The agent uses the per-node `agentToken` shown in the install command. It sends:
 
 - node status: `up` or `down`
 - local TCP check latency
+- TCP latency to China Mobile: `js-cm-v4.ip.zstaticcdn.com:80`
+- TCP latency to China Unicom: `js-cu-v4.ip.zstaticcdn.com:80`
+- TCP latency to China Telecom: `js-ct-v4.ip.zstaticcdn.com:80`
 - connection count from `ss`
 - RX/TX byte counters from `iptables`
 - host uptime
@@ -219,6 +222,33 @@ Manage the agent on a node VPS:
 systemctl status gproxy-agent
 journalctl -u gproxy-agent -f
 systemctl restart gproxy-agent
+```
+
+### Logs and storage growth
+
+The panel stores only the latest node metrics in `data/db.json`; it does not keep
+per-minute history, so the JSON database will not grow forever from monitoring.
+
+Runtime logs are handled by systemd journald. To cap journal size on a VPS, edit
+`/etc/systemd/journald.conf`:
+
+```ini
+SystemMaxUse=200M
+RuntimeMaxUse=50M
+MaxRetentionSec=14day
+```
+
+Then restart journald:
+
+```bash
+systemctl restart systemd-journald
+```
+
+You can vacuum old logs manually:
+
+```bash
+journalctl --vacuum-time=14d
+journalctl --vacuum-size=200M
 ```
 
 ## Routes

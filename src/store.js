@@ -65,6 +65,11 @@ export class JsonStore {
     let totalConnections = 0;
     let latencySum = 0;
     let latencyCount = 0;
+    const probeLatency = {
+      cm: newProbeMetric(),
+      cu: newProbeMetric(),
+      ct: newProbeMetric(),
+    };
 
     const nodeTraffic = nodes.map((node) => {
       const agent = node.agent || {};
@@ -81,6 +86,13 @@ export class JsonStore {
         latencySum += agent.latencyMs;
         latencyCount += 1;
       }
+      for (const key of Object.keys(probeLatency)) {
+        const latencyMs = agent.probes?.[key]?.latencyMs;
+        if (Number.isFinite(latencyMs)) {
+          probeLatency[key].latencySum += latencyMs;
+          probeLatency[key].count += 1;
+        }
+      }
 
       return {
         id: node.id,
@@ -90,6 +102,7 @@ export class JsonStore {
         txBytes,
         totalBytes,
         latencyMs: agent.latencyMs ?? null,
+        probes: agent.probes || {},
       };
     }).sort((a, b) => b.totalBytes - a.totalBytes).slice(0, 8);
 
@@ -103,6 +116,7 @@ export class JsonStore {
       totalTrafficBytes: totalRxBytes + totalTxBytes,
       totalConnections,
       averageLatencyMs: latencyCount ? Math.round(latencySum / latencyCount) : null,
+      probeLatency: finalizeProbeMetrics(probeLatency),
       nodeTraffic,
       totalCertificates: certs.length,
       expiringCertificates: certs.filter((cert) => {
@@ -175,6 +189,7 @@ export class JsonStore {
       txCounter,
       connections: toNonNegativeNumber(input.connections),
       uptimeSeconds: toNonNegativeNumber(input.uptimeSeconds),
+      probes: normalizeProbes(input.probes),
       version: trimString(input.version, 40),
       remoteAddress: trimString(remoteAddress, 80),
       reportedAt: now,
@@ -362,6 +377,43 @@ function toNullableNumber(value) {
 
 function trimString(value, maxLength) {
   return String(value || '').slice(0, maxLength);
+}
+
+function normalizeProbes(value) {
+  const probes = {};
+  if (!value || typeof value !== 'object') return probes;
+
+  for (const key of ['cm', 'cu', 'ct']) {
+    const probe = value[key];
+    if (!probe || typeof probe !== 'object') continue;
+    probes[key] = {
+      host: trimString(probe.host, 120),
+      port: Number(probe.port || 80),
+      status: probe.status === 'up' ? 'up' : 'down',
+      latencyMs: toNullableNumber(probe.latencyMs),
+      error: trimString(probe.error, 160),
+    };
+  }
+
+  return probes;
+}
+
+function newProbeMetric() {
+  return {
+    count: 0,
+    latencySum: 0,
+    averageLatencyMs: null,
+  };
+}
+
+function finalizeProbeMetrics(value) {
+  return Object.fromEntries(Object.entries(value).map(([key, metric]) => [
+    key,
+    {
+      count: metric.count,
+      averageLatencyMs: metric.count ? Math.round(metric.latencySum / metric.count) : null,
+    },
+  ]));
 }
 
 function byId(a, b) {

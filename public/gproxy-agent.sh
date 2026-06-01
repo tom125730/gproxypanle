@@ -78,7 +78,7 @@ run_agent() {
 
 report_once() {
   local listen_port="$1"
-  local start end latency status error connections rx tx uptime
+  local start end latency status error connections rx tx uptime probes_json
 
   start="$(now_ms)"
   error=""
@@ -99,13 +99,14 @@ report_once() {
   rx="$(iptables_bytes INPUT "$listen_port")"
   tx="$(iptables_bytes OUTPUT "$listen_port")"
   uptime="$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)"
+  probes_json="$(probe_targets_json)"
 
-  curl -fsS \
+  curl -fsS --show-error \
     -H "Authorization: Bearer ${TOKEN}" \
     -H "Content-Type: application/json" \
     -X POST "${PANEL%/}/api/node/${NODE}/agent" \
-    --data "$(json_payload "$status" "$latency" "$error" "$connections" "$rx" "$tx" "$uptime")" \
-    >/dev/null
+    --data "$(json_payload "$status" "$latency" "$error" "$connections" "$rx" "$tx" "$uptime" "$probes_json")" \
+    >/dev/null 2>/tmp/gproxy-agent-report.err || logger -t gproxy-agent "report failed: $(tr '\n' ' ' </tmp/gproxy-agent-report.err | cut -c1-180)"
 }
 
 setup_iptables_counter() {
@@ -163,12 +164,43 @@ connection_count() {
   ss -Htan "sport = :${port} or dport = :${port}" 2>/dev/null | wc -l
 }
 
+probe_targets_json() {
+  python3 - <<'PY'
+import json
+import socket
+import time
+
+targets = {
+    "cm": ("js-cm-v4.ip.zstaticcdn.com", 80),
+    "cu": ("js-cu-v4.ip.zstaticcdn.com", 80),
+    "ct": ("js-ct-v4.ip.zstaticcdn.com", 80),
+}
+
+results = {}
+for key, (host, port) in targets.items():
+    start = time.time()
+    try:
+        with socket.create_connection((host, port), timeout=3):
+            latency = int(round((time.time() - start) * 1000))
+        results[key] = {"host": host, "port": port, "status": "up", "latencyMs": latency, "error": ""}
+    except Exception as exc:
+        results[key] = {"host": host, "port": port, "status": "down", "latencyMs": None, "error": str(exc)[:120]}
+
+print(json.dumps(results, separators=(",", ":")))
+PY
+}
+
 json_payload() {
   python3 - "$@" <<'PY'
 import json
 import sys
 
-status, latency, error, connections, rx, tx, uptime = sys.argv[1:]
+status, latency, error, connections, rx, tx, uptime, probes = sys.argv[1:]
+try:
+    probe_value = json.loads(probes)
+except Exception:
+    probe_value = {}
+
 print(json.dumps({
     "status": status,
     "latencyMs": int(latency),
@@ -177,6 +209,7 @@ print(json.dumps({
     "rxBytes": int(rx),
     "txBytes": int(tx),
     "uptimeSeconds": int(uptime),
+    "probes": probe_value,
     "version": "shell-1",
 }))
 PY
