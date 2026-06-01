@@ -38,7 +38,7 @@ export function layout(title, active, body, options = {}) {
 </html>`;
 }
 
-export function loginPage(error = '') {
+export function loginPage(error = '', security = {}) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -57,6 +57,9 @@ export function loginPage(error = '') {
       <label>Password
         <input name="password" type="password" required>
       </label>
+      ${security.twoFactorEnabled ? `<label>2FA Code
+        <input name="totp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" placeholder="123456" required>
+      </label>` : ''}
       <button type="submit">Login</button>
     </form>
   </main>
@@ -265,16 +268,87 @@ export function subscriptionsPage(users) {
   `);
 }
 
-export function settingsPage(settings) {
+export function settingsPage(settings, security = {}, error = '') {
   return layout('Settings', 'Settings', `
     <header class="topbar"><h1>Settings</h1></header>
+    ${error ? `<p class="error settings-error">${escapeHtml(error)}</p>` : ''}
     <section class="panel">
+      <div class="panel-head">
+        <h2>General</h2>
+      </div>
       <form method="post" action="/api/settings" class="grid-form">
         ${input('publicBaseUrl', 'Public Base URL', 'https://sub.example.com', false, settings.publicBaseUrl || '')}
         <button type="submit">Save Settings</button>
       </form>
     </section>
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Password</h2>
+      </div>
+      <form method="post" action="/api/security/password" class="grid-form">
+        <label>Current Password
+          <input name="currentPassword" type="password" autocomplete="current-password" required>
+        </label>
+        <label>New Password
+          <input name="newPassword" type="password" autocomplete="new-password" minlength="8" required>
+        </label>
+        <label>Confirm New Password
+          <input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required>
+        </label>
+        <button type="submit">Update Password</button>
+      </form>
+    </section>
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Two-Factor Authentication</h2>
+        <span class="status ${security.twoFactorEnabled ? 'status-up' : 'status-waiting'}">${security.twoFactorEnabled ? 'ENABLED' : 'DISABLED'}</span>
+      </div>
+      ${twoFactorPanel(security)}
+    </section>
   `);
+}
+
+function twoFactorPanel(security) {
+  if (security.twoFactorEnabled) {
+    return `<form method="post" action="/api/security/2fa/disable" class="grid-form">
+      <label>Current Password
+        <input name="currentPassword" type="password" autocomplete="current-password" required>
+      </label>
+      <label>2FA Code
+        <input name="totp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" placeholder="123456" required>
+      </label>
+      <button class="danger" type="submit">Disable 2FA</button>
+    </form>`;
+  }
+
+  if (security.pendingTwoFactorSecret) {
+    return `<div class="two-factor-setup">
+      <div class="secret-box">
+        <span class="muted">Secret</span>
+        <code>${escapeHtml(security.pendingTwoFactorSecret)}</code>
+      </div>
+      <div class="secret-box wide">
+        <span class="muted">Authenticator URI</span>
+        <code>${escapeHtml(security.pendingTwoFactorUri)}</code>
+      </div>
+      <form method="post" action="/api/security/2fa/enable" class="grid-form">
+        <label>Current Password
+          <input name="currentPassword" type="password" autocomplete="current-password" required>
+        </label>
+        <label>2FA Code
+          <input name="totp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" placeholder="123456" required>
+        </label>
+        <button type="submit">Enable 2FA</button>
+      </form>
+    </div>`;
+  }
+
+  return `<form method="post" action="/api/security/2fa/prepare" class="grid-form">
+    <label>Current Password
+      <input name="currentPassword" type="password" autocomplete="current-password" required>
+    </label>
+    <button type="submit">Start 2FA Setup</button>
+  </form>`;
 }
 
 function metric(label, value, href, linked = true) {

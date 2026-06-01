@@ -9,6 +9,13 @@ const emptyDb = {
   settings: {
     publicBaseUrl: '',
   },
+  security: {
+    adminPasswordHash: '',
+    twoFactorEnabled: false,
+    twoFactorSecret: '',
+    pendingTwoFactorSecret: '',
+    sessionVersion: 1,
+  },
 };
 
 const defaultNodeSecret = '3c999130';
@@ -260,6 +267,10 @@ export class JsonStore {
     return this.db.settings;
   }
 
+  security() {
+    return this.db.security;
+  }
+
   async updateSettings(input) {
     this.db.settings = {
       ...this.db.settings,
@@ -267,6 +278,15 @@ export class JsonStore {
     };
     await this.save();
     return this.db.settings;
+  }
+
+  async updateSecurity(input) {
+    this.db.security = normalizeSecurity({
+      ...this.db.security,
+      ...input,
+    });
+    await this.save();
+    return this.db.security;
   }
 }
 
@@ -302,8 +322,18 @@ function mergeDb(value = {}) {
         ...emptyDb.settings,
         ...(value.settings || {}),
       },
+      security: normalizeSecurity(value.security),
     },
     changed,
+  };
+}
+
+function normalizeSecurity(value = {}) {
+  return {
+    ...emptyDb.security,
+    ...value,
+    twoFactorEnabled: toBool(value.twoFactorEnabled, emptyDb.security.twoFactorEnabled),
+    sessionVersion: Math.max(1, Number(value.sessionVersion || emptyDb.security.sessionVersion)),
   };
 }
 

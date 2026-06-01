@@ -33,6 +33,7 @@ await store.load();
 if (config.publicBaseUrl && !store.settings().publicBaseUrl) {
   await store.updateSettings({ publicBaseUrl: config.publicBaseUrl });
 }
+await ensureAdminPasswordHash();
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -79,12 +80,12 @@ async function route(req, res) {
   }
 
   if (req.method === 'GET' && url.pathname === '/login') {
-    return sendHtml(res, loginPage(url.searchParams.get('error') || ''));
+    return sendHtml(res, loginPage(url.searchParams.get('error') || '', securityStatus()));
   }
   if (req.method === 'POST' && url.pathname === '/login') {
     const input = await readBody(req);
-    if (input.username === config.adminUser && input.password === config.adminPass) {
-      setSession(res);
+    if (await verifyAdminLogin(input)) {
+      setSession(res, securityVersion());
       return redirect(res, '/');
     }
     return redirect(res, '/login?error=Invalid%20username%20or%20password');
@@ -99,7 +100,7 @@ async function route(req, res) {
   }
 
   if (req.method === 'GET' && url.pathname === '/') {
-    return sendHtml(res, dashboardPage(store.metrics(), isAuthenticated(req)));
+    return sendHtml(res, dashboardPage(store.metrics(), isAuthenticated(req, url)));
   }
 
   if (!requireAuth(req, res, url)) return;
@@ -119,7 +120,13 @@ async function route(req, res) {
   }
   if (req.method === 'GET' && url.pathname === '/subscriptions') return sendHtml(res, subscriptionsPage(store.listUsers()));
   if (req.method === 'GET' && url.pathname === '/users') return sendHtml(res, usersPage(store.listUsers()));
-  if (req.method === 'GET' && url.pathname === '/settings') return sendHtml(res, settingsPage(store.settings()));
+  if (req.method === 'GET' && url.pathname === '/settings') {
+    return sendHtml(res, settingsPage(
+      store.settings(),
+      securityStatus(),
+      url.searchParams.get('error') || '',
+    ));
+  }
 
   if (segments[0] === 'api') return apiRoute(req, res, segments.slice(1));
 
@@ -173,6 +180,18 @@ async function apiRoute(req, res, segments) {
     await store.updateSettings(await readBody(req));
     return redirect(res, '/settings');
   }
+  if (method === 'POST' && segments[0] === 'security' && segments[1] === 'password') {
+    return updatePasswordRoute(req, res);
+  }
+  if (method === 'POST' && segments[0] === 'security' && segments[1] === '2fa' && segments[2] === 'prepare') {
+    return prepareTwoFactorRoute(req, res);
+  }
+  if (method === 'POST' && segments[0] === 'security' && segments[1] === '2fa' && segments[2] === 'enable') {
+    return enableTwoFactorRoute(req, res);
+  }
+  if (method === 'POST' && segments[0] === 'security' && segments[1] === '2fa' && segments[2] === 'disable') {
+    return disableTwoFactorRoute(req, res);
+  }
 
   return notFound(res);
 }
@@ -193,7 +212,7 @@ async function nodeAgentRoute(req, res, nodeId) {
 }
 
 function requireAuth(req, res, url) {
-  if (isAuthenticated(req)) return true;
+  if (isAuthenticated(req, url)) return true;
   if (url.pathname.startsWith('/api/')) {
     sendJson(res, 401, { error: 'authentication required' });
     return false;
@@ -202,11 +221,22 @@ function requireAuth(req, res, url) {
   return false;
 }
 
-function isAuthenticated(req) {
-  return hasValidSession(req) || hasBasicAuth(req);
+function isAuthenticated(req, url) {
+  return hasValidSession(req) || hasBasicAuth(req, url);
 }
 
-function hasBasicAuth(req) {
+async function verifyAdminLogin(input) {
+  if (input.username !== config.adminUser) return false;
+  if (!await verifyAdminPassword(input.password || '')) return false;
+
+  const security = store.security();
+  if (!security.twoFactorEnabled) return true;
+  return verifyTotp(security.twoFactorSecret, input.totp || '');
+}
+
+function hasBasicAuth(req, url) {
+  if (store.security().twoFactorEnabled && !isBasicAuthAllowed(req, url)) return false;
+
   const header = req.headers.authorization || '';
   const [scheme, encoded] = header.split(' ');
   if (scheme !== 'Basic' || !encoded) return false;
@@ -217,7 +247,11 @@ function hasBasicAuth(req) {
 
   const user = decoded.slice(0, separator);
   const pass = decoded.slice(separator + 1);
-  return user === config.adminUser && pass === config.adminPass;
+  return user === config.adminUser && verifyPasswordSync(pass, store.security().adminPasswordHash);
+}
+
+function isBasicAuthAllowed(req, url) {
+  return req.method === 'POST' && url.pathname.startsWith('/api/cert');
 }
 
 function bearerToken(req) {
@@ -233,13 +267,14 @@ function hasValidSession(req) {
   const cookies = parseCookies(req.headers.cookie || '');
   const session = cookies.gproxy_session;
   if (!session) return false;
-  const [user, signature] = session.split('.');
-  if (user !== config.adminUser || !signature) return false;
-  return safeEqual(signature, signSession(user));
+  const [user, version, signature] = session.split('.');
+  if (user !== config.adminUser || !version || !signature) return false;
+  if (Number(version) !== securityVersion()) return false;
+  return safeEqual(signature, signSession(user, version));
 }
 
-function setSession(res) {
-  const value = `${config.adminUser}.${signSession(config.adminUser)}`;
+function setSession(res, version) {
+  const value = `${config.adminUser}.${version}.${signSession(config.adminUser, version)}`;
   res.setHeader('Set-Cookie', `gproxy_session=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800`);
 }
 
@@ -247,8 +282,8 @@ function clearSession(res) {
   res.setHeader('Set-Cookie', 'gproxy_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0');
 }
 
-function signSession(user) {
-  return crypto.createHmac('sha256', config.sessionSecret).update(user).digest('base64url');
+function signSession(user, version) {
+  return crypto.createHmac('sha256', config.sessionSecret).update(`${user}.${version}`).digest('base64url');
 }
 
 function parseCookies(header) {
@@ -271,6 +306,207 @@ function clientAddress(req) {
 
 function adminAuthPair() {
   return `${config.adminUser}:${config.adminPass}`;
+}
+
+async function updatePasswordRoute(req, res) {
+  const input = await readBody(req);
+  if (!await verifyAdminPassword(input.currentPassword || '')) {
+    return redirect(res, '/settings?error=Invalid%20current%20password');
+  }
+  if (!input.newPassword || String(input.newPassword).length < 8) {
+    return redirect(res, '/settings?error=New%20password%20must%20be%20at%20least%208%20characters');
+  }
+  if (input.newPassword !== input.confirmPassword) {
+    return redirect(res, '/settings?error=New%20passwords%20do%20not%20match');
+  }
+
+  await store.updateSecurity({
+    adminPasswordHash: await hashPassword(input.newPassword),
+    sessionVersion: securityVersion() + 1,
+  });
+  clearSession(res);
+  return redirect(res, '/login?error=Password%20updated%2C%20please%20sign%20in');
+}
+
+async function prepareTwoFactorRoute(req, res) {
+  const input = await readBody(req);
+  if (!await verifyAdminPassword(input.currentPassword || '')) {
+    return redirect(res, '/settings?error=Invalid%20current%20password');
+  }
+
+  await store.updateSecurity({ pendingTwoFactorSecret: newTotpSecret() });
+  return redirect(res, '/settings');
+}
+
+async function enableTwoFactorRoute(req, res) {
+  const input = await readBody(req);
+  const security = store.security();
+  if (!security.pendingTwoFactorSecret) {
+    return redirect(res, '/settings?error=Start%202FA%20setup%20first');
+  }
+  if (!await verifyAdminPassword(input.currentPassword || '')) {
+    return redirect(res, '/settings?error=Invalid%20current%20password');
+  }
+  if (!verifyTotp(security.pendingTwoFactorSecret, input.totp || '')) {
+    return redirect(res, '/settings?error=Invalid%202FA%20code');
+  }
+
+  await store.updateSecurity({
+    twoFactorEnabled: true,
+    twoFactorSecret: security.pendingTwoFactorSecret,
+    pendingTwoFactorSecret: '',
+    sessionVersion: securityVersion() + 1,
+  });
+  clearSession(res);
+  return redirect(res, '/login?error=2FA%20enabled%2C%20please%20sign%20in');
+}
+
+async function disableTwoFactorRoute(req, res) {
+  const input = await readBody(req);
+  const security = store.security();
+  if (!await verifyAdminPassword(input.currentPassword || '')) {
+    return redirect(res, '/settings?error=Invalid%20current%20password');
+  }
+  if (!verifyTotp(security.twoFactorSecret, input.totp || '')) {
+    return redirect(res, '/settings?error=Invalid%202FA%20code');
+  }
+
+  await store.updateSecurity({
+    twoFactorEnabled: false,
+    twoFactorSecret: '',
+    pendingTwoFactorSecret: '',
+    sessionVersion: securityVersion() + 1,
+  });
+  clearSession(res);
+  return redirect(res, '/login?error=2FA%20disabled%2C%20please%20sign%20in');
+}
+
+async function ensureAdminPasswordHash() {
+  const security = store.security();
+  if (security.adminPasswordHash) return;
+  await store.updateSecurity({ adminPasswordHash: await hashPassword(config.adminPass) });
+}
+
+function securityStatus() {
+  const security = store.security();
+  const pendingSecret = security.pendingTwoFactorSecret || '';
+  return {
+    twoFactorEnabled: Boolean(security.twoFactorEnabled),
+    pendingTwoFactorSecret: pendingSecret,
+    pendingTwoFactorUri: pendingSecret ? totpUri(pendingSecret) : '',
+  };
+}
+
+function securityVersion() {
+  return Number(store.security().sessionVersion || 1);
+}
+
+async function verifyAdminPassword(password) {
+  return verifyPassword(password, store.security().adminPasswordHash);
+}
+
+async function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('base64url');
+  const iterations = 210000;
+  const key = await pbkdf2(password, salt, iterations);
+  return `pbkdf2_sha256$${iterations}$${salt}$${key.toString('base64url')}`;
+}
+
+async function verifyPassword(password, encoded) {
+  if (!encoded) return false;
+  const parts = String(encoded).split('$');
+  if (parts.length !== 4 || parts[0] !== 'pbkdf2_sha256') return false;
+  const iterations = Number(parts[1]);
+  if (!Number.isFinite(iterations) || iterations < 100000) return false;
+  const expected = Buffer.from(parts[3], 'base64url');
+  const actual = await pbkdf2(password, parts[2], iterations);
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+}
+
+function verifyPasswordSync(password, encoded) {
+  if (!encoded) return false;
+  const parts = String(encoded).split('$');
+  if (parts.length !== 4 || parts[0] !== 'pbkdf2_sha256') return false;
+  const iterations = Number(parts[1]);
+  if (!Number.isFinite(iterations) || iterations < 100000) return false;
+  const expected = Buffer.from(parts[3], 'base64url');
+  const actual = crypto.pbkdf2Sync(String(password), parts[2], iterations, 32, 'sha256');
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+}
+
+function pbkdf2(password, salt, iterations) {
+  return new Promise((resolve, reject) => {
+    crypto.pbkdf2(String(password), salt, iterations, 32, 'sha256', (error, key) => {
+      if (error) reject(error);
+      else resolve(key);
+    });
+  });
+}
+
+function newTotpSecret() {
+  return base32Encode(crypto.randomBytes(20));
+}
+
+function verifyTotp(secret, input) {
+  const code = String(input || '').replace(/\s+/g, '');
+  if (!/^\d{6}$/.test(code)) return false;
+  const now = Math.floor(Date.now() / 30000);
+  return [-1, 0, 1].some((offset) => safeEqual(totpCode(secret, now + offset), code));
+}
+
+function totpCode(secret, counter) {
+  const key = base32Decode(secret);
+  const buffer = Buffer.alloc(8);
+  buffer.writeBigUInt64BE(BigInt(counter));
+  const hmac = crypto.createHmac('sha1', key).update(buffer).digest();
+  const offset = hmac[hmac.length - 1] & 0xf;
+  const value = ((hmac[offset] & 0x7f) << 24)
+    | ((hmac[offset + 1] & 0xff) << 16)
+    | ((hmac[offset + 2] & 0xff) << 8)
+    | (hmac[offset + 3] & 0xff);
+  return String(value % 1000000).padStart(6, '0');
+}
+
+function totpUri(secret) {
+  const label = encodeURIComponent(`gproxy:${config.adminUser}`);
+  const issuer = encodeURIComponent('gproxy');
+  return `otpauth://totp/${label}?secret=${encodeURIComponent(secret)}&issuer=${issuer}&algorithm=SHA1&digits=6&period=30`;
+}
+
+function base32Encode(buffer) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = 0;
+  let value = 0;
+  let output = '';
+  for (const byte of buffer) {
+    value = (value << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      output += alphabet[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) output += alphabet[(value << (5 - bits)) & 31];
+  return output;
+}
+
+function base32Decode(value) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  const clean = String(value || '').toUpperCase().replace(/=+$/g, '').replace(/\s+/g, '');
+  let bits = 0;
+  let number = 0;
+  const bytes = [];
+  for (const char of clean) {
+    const index = alphabet.indexOf(char);
+    if (index < 0) continue;
+    number = (number << 5) | index;
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((number >>> (bits - 8)) & 0xff);
+      bits -= 8;
+    }
+  }
+  return Buffer.from(bytes);
 }
 
 async function effectiveMethod(req) {

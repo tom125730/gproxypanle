@@ -63,6 +63,10 @@ a {
   margin: 0;
 }
 
+.settings-error {
+  margin-bottom: 18px;
+}
+
 .warn {
   color: #a15c00;
   font-weight: 700;
@@ -465,6 +469,24 @@ textarea {
 .form-note {
   margin: -6px 0 0;
   color: var(--muted);
+  font-size: 13px;
+}
+
+.two-factor-setup {
+  display: grid;
+  gap: 14px;
+}
+
+.secret-box {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+  background: #fbfcfe;
+}
+
+.secret-box code {
   font-size: 13px;
 }
 

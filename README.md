@@ -30,6 +30,20 @@ Admin login:
 
 Login uses a normal web form at `/login`.
 
+## Security
+
+On first start, the admin password is initialized from `ADMIN_PASS` and stored as
+a PBKDF2-SHA256 hash in `data/db.json`. After that, the password can be changed
+from `Settings -> Password` without editing the environment file.
+
+Two-factor authentication can be enabled from `Settings -> Two-Factor
+Authentication`. It uses standard TOTP codes supported by Google Authenticator,
+Microsoft Authenticator, 1Password, and similar apps.
+
+When 2FA is enabled, browser sessions must sign in with username, password, and
+the 6-digit TOTP code. HTTP Basic Auth is limited to certificate upload routes
+so existing certificate renewal hooks can continue to run.
+
 ## VPS Deployment
 
 The examples below assume an Ubuntu/Debian VPS, a DNS record already pointing to
