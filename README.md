@@ -17,7 +17,7 @@ Environment variables:
 HOST=0.0.0.0
 PORT=3000
 ADMIN_USER=admin
-ADMIN_PASS=Aa.114514
+ADMIN_PASS=
 DATA_FILE=./data/db.json
 PUBLIC_BASE_URL=https://sub.example.com
 ```
@@ -25,7 +25,7 @@ PUBLIC_BASE_URL=https://sub.example.com
 Default admin login:
 
 - user: `admin`
-- password: `Aa.114514`
+- password: ``
 
 Login uses a normal web form at `/login`.
 
