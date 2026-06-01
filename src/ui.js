@@ -153,7 +153,7 @@ export function nodesPage(nodes, certs, editingNode = null) {
         </div>
       </form>
     </section>
-    <section class="table-wrap">
+    <section class="table-wrap nodes-wrap">
       ${table(['Key', 'Name', 'Host', 'Status', 'Traffic', 'Config', 'Docker', 'Agent', 'Remote Deploy', ''], nodes.map((node) => [
         node.id,
         node.name,
@@ -162,7 +162,7 @@ export function nodesPage(nodes, certs, editingNode = null) {
         html(nodeTraffic(node)),
         html(`<a href="/n/${encodeURIComponent(node.id)}/${encodeURIComponent(node.configToken || '')}">config</a>`),
         html(`<button class="copy-command" type="button" data-docker-command data-config-path="/n/${encodeURIComponent(node.id)}/${encodeURIComponent(node.configToken || '')}">Docker command</button>`),
-        html(`<button class="copy-command" type="button" data-agent-command data-node-id="${escapeAttr(node.id)}" data-agent-token="${escapeAttr(node.agentToken)}" data-listen="${escapeAttr(node.listen || `0.0.0.0:${node.port}`)}" data-target-host="${escapeAttr(node.host)}" data-target-port="${escapeAttr(node.port)}">Install agent</button>`),
+        html(`<button class="copy-command" type="button" data-agent-command data-node-id="${escapeAttr(node.id)}" data-agent-token="${escapeAttr(node.agentToken)}" data-listen="${escapeAttr(node.listen || `0.0.0.0:${node.port}`)}" data-target-host="${escapeAttr(node.host)}" data-target-port="${escapeAttr(node.port)}">Install agent</button>${agentVersion(node)}`),
         html(`${deployForm(node)}${deployStatus(node.agentCommand)}`),
         html(`<div class="row-actions"><a class="button-link small" href="/nodes/${encodeURIComponent(node.id)}/edit">Edit</a>${deleteForm(`/api/node/${encodeURIComponent(node.id)}`)}</div>`),
       ]))}
@@ -561,6 +561,11 @@ function table(headers, rows) {
   </table>`;
 }
 
+function agentVersion(node) {
+  const version = node.agent?.version;
+  return `<div class="agent-version"><span class="muted">agent</span> ${escapeHtml(version || 'n/a')}</div>`;
+}
+
 function deleteForm(action) {
   return `<form method="post" action="${escapeAttr(action)}"><input type="hidden" name="_method" value="DELETE"><button class="danger" type="submit">Delete</button></form>`;
 }
@@ -579,7 +584,7 @@ function deployStatus(command) {
   }[status] || status;
   const detail = command.finishedAt || command.createdAt || '';
   const error = command.error ? `<br><span class="muted">${escapeHtml(command.error)}</span>` : '';
-  const output = command.output ? `<pre class="deploy-output">${escapeHtml(command.output)}</pre>` : '';
+  const output = command.output ? `<details class="deploy-details"><summary>Output</summary><pre class="deploy-output">${escapeHtml(command.output)}</pre></details>` : '';
   return `<div class="deploy-status"><span class="status status-${status === 'succeeded' ? 'up' : status === 'failed' ? 'down' : 'waiting'}">${escapeHtml(label.toUpperCase())}</span><br><span class="muted">${escapeHtml(detail)}</span>${error}${output}</div>`;
 }
 
