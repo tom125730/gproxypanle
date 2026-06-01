@@ -216,6 +216,11 @@ Traffic is currently node-level traffic. The `trafficLimit` field on users is
 stored for planning and display only; it is not enforced yet because gproxy does
 not expose per-subscription-user traffic data to the panel.
 
+The Dashboard keeps a rolling 24-hour latency history per node. It stores up to
+1440 samples per node and automatically drops older samples. `no data` means the
+agent has not reported that probe yet; `down` means the agent reported a failed
+TCP connection to that target from the node VPS.
+
 Manage the agent on a node VPS:
 
 ```bash
@@ -244,8 +249,9 @@ timeout 3 bash -c 'cat < /dev/null > /dev/tcp/js-ct-v4.ip.zstaticcdn.com/80'
 
 ### Logs and storage growth
 
-The panel stores only the latest node metrics in `data/db.json`; it does not keep
-per-minute history, so the JSON database will not grow forever from monitoring.
+The panel stores the latest node metrics and a rolling 24-hour latency history in
+`data/db.json`. Older latency samples are pruned automatically, so the JSON
+database should not grow forever from monitoring.
 
 Runtime logs are handled by systemd journald. To cap journal size on a VPS, edit
 `/etc/systemd/journald.conf`:

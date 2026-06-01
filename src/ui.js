@@ -94,13 +94,16 @@ export function dashboardPage(metrics) {
           <div><span>RX</span><strong>${escapeHtml(formatBytes(metrics.totalRxBytes))}</strong></div>
           <div><span>TX</span><strong>${escapeHtml(formatBytes(metrics.totalTxBytes))}</strong></div>
           <div><span>Total</span><strong>${escapeHtml(formatBytes(metrics.totalTrafficBytes))}</strong></div>
-          <div><span>Local</span><strong>${escapeHtml(formatLatency(metrics.averageLatencyMs))}</strong></div>
-          <div><span>CM</span><strong>${escapeHtml(formatLatency(metrics.probeLatency?.cm?.averageLatencyMs))}</strong></div>
-          <div><span>CU</span><strong>${escapeHtml(formatLatency(metrics.probeLatency?.cu?.averageLatencyMs))}</strong></div>
-          <div><span>CT</span><strong>${escapeHtml(formatLatency(metrics.probeLatency?.ct?.averageLatencyMs))}</strong></div>
         </div>
         ${trafficChart(metrics.nodeTraffic)}
       </div>
+    </section>
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Latency by Node</h2>
+        <span class="muted">last 24h</span>
+      </div>
+      ${latencyNodeChart(metrics.nodeLatency)}
     </section>
   `);
 }
@@ -318,6 +321,63 @@ function trafficChart(nodes) {
       </div>`;
     }).join('')}
   </div>`;
+}
+
+function latencyNodeChart(nodes) {
+  if (!nodes || !nodes.length) {
+    return '<div class="empty mini-empty">No latency data yet</div>';
+  }
+
+  return `<div class="latency-list">
+    ${nodes.map((node) => `<div class="latency-node">
+      <div class="latency-node-head">
+        <span>${escapeHtml(node.name)}</span>
+        <div class="latency-current">
+          ${latencyPill('Local', node.local)}
+          ${latencyPill('CM', node.cm)}
+          ${latencyPill('CU', node.cu)}
+          ${latencyPill('CT', node.ct)}
+        </div>
+      </div>
+      <div class="heat-grid">
+        ${latencyHeat(node.history, 'local', 'Local')}
+        ${latencyHeat(node.history, 'cm', 'CM')}
+        ${latencyHeat(node.history, 'cu', 'CU')}
+        ${latencyHeat(node.history, 'ct', 'CT')}
+      </div>
+    </div>`).join('')}
+  </div>`;
+}
+
+function latencyPill(label, value) {
+  const className = latencyClass(value);
+  return `<span class="latency-pill ${className}">${escapeHtml(label)} ${escapeHtml(formatLatency(value))}</span>`;
+}
+
+function latencyHeat(history, key, label) {
+  const samples = normalizeHeatSamples(history, key);
+  return `<div class="heat-row">
+    <span>${escapeHtml(label)}</span>
+    <div class="heat-cells">
+      ${samples.map((value) => `<i class="${escapeAttr(latencyClass(value))}" title="${escapeAttr(`${label}: ${formatLatency(value)}`)}"></i>`).join('')}
+    </div>
+  </div>`;
+}
+
+function normalizeHeatSamples(history, key) {
+  const values = Array.isArray(history) ? history.slice(-48).map((sample) => sample[key] ?? null) : [];
+  while (values.length < 48) values.unshift(null);
+  return values;
+}
+
+function latencyClass(value) {
+  if (value === null || value === undefined) return 'latency-empty';
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 'latency-empty';
+  if (number <= 80) return 'latency-good';
+  if (number <= 180) return 'latency-ok';
+  if (number <= 350) return 'latency-warn';
+  return 'latency-bad';
 }
 
 function nodeStatus(node) {

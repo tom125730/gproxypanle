@@ -13,6 +13,8 @@ const emptyDb = {
 
 const defaultNodeSecret = '3c999130';
 const agentStaleMs = 180000;
+const latencyHistoryMs = 24 * 60 * 60 * 1000;
+const maxLatencySamples = 1440;
 
 export class JsonStore {
   constructor(filePath) {
@@ -63,13 +65,7 @@ export class JsonStore {
     let totalRxBytes = 0;
     let totalTxBytes = 0;
     let totalConnections = 0;
-    let latencySum = 0;
-    let latencyCount = 0;
-    const probeLatency = {
-      cm: newProbeMetric(),
-      cu: newProbeMetric(),
-      ct: newProbeMetric(),
-    };
+    const nodeLatency = [];
 
     const nodeTraffic = nodes.map((node) => {
       const agent = node.agent || {};
@@ -81,18 +77,7 @@ export class JsonStore {
       totalRxBytes += rxBytes;
       totalTxBytes += txBytes;
       totalConnections += toNonNegativeNumber(agent.connections);
-
-      if (Number.isFinite(agent.latencyMs)) {
-        latencySum += agent.latencyMs;
-        latencyCount += 1;
-      }
-      for (const key of Object.keys(probeLatency)) {
-        const latencyMs = agent.probes?.[key]?.latencyMs;
-        if (Number.isFinite(latencyMs)) {
-          probeLatency[key].latencySum += latencyMs;
-          probeLatency[key].count += 1;
-        }
-      }
+      nodeLatency.push(nodeLatencySummary(node));
 
       return {
         id: node.id,
@@ -115,8 +100,7 @@ export class JsonStore {
       totalTxBytes,
       totalTrafficBytes: totalRxBytes + totalTxBytes,
       totalConnections,
-      averageLatencyMs: latencyCount ? Math.round(latencySum / latencyCount) : null,
-      probeLatency: finalizeProbeMetrics(probeLatency),
+      nodeLatency: nodeLatency.sort((a, b) => a.name.localeCompare(b.name)),
       nodeTraffic,
       totalCertificates: certs.length,
       expiringCertificates: certs.filter((cert) => {
@@ -194,6 +178,7 @@ export class JsonStore {
       remoteAddress: trimString(remoteAddress, 80),
       reportedAt: now,
     };
+    node.latencyHistory = appendLatencySample(node.latencyHistory, node.agent, now);
 
     await this.save();
     return withNodeAgentStatus(node).agent;
@@ -379,6 +364,46 @@ function trimString(value, maxLength) {
   return String(value || '').slice(0, maxLength);
 }
 
+function appendLatencySample(history, agent, reportedAt) {
+  const cutoff = Date.now() - latencyHistoryMs;
+  const samples = Array.isArray(history)
+    ? history.filter((sample) => new Date(sample.at).getTime() >= cutoff)
+    : [];
+
+  samples.push({
+    at: reportedAt,
+    local: agent.latencyMs ?? null,
+    cm: agent.probes?.cm?.latencyMs ?? null,
+    cu: agent.probes?.cu?.latencyMs ?? null,
+    ct: agent.probes?.ct?.latencyMs ?? null,
+  });
+
+  return samples.slice(-maxLatencySamples);
+}
+
+function nodeLatencySummary(node) {
+  const agent = node.agent || {};
+  const history = Array.isArray(node.latencyHistory) ? node.latencyHistory : [];
+
+  return {
+    id: node.id,
+    name: node.name || node.id,
+    state: agent.state,
+    reportedAt: agent.reportedAt || '',
+    local: agent.latencyMs ?? null,
+    cm: agent.probes?.cm?.latencyMs ?? null,
+    cu: agent.probes?.cu?.latencyMs ?? null,
+    ct: agent.probes?.ct?.latencyMs ?? null,
+    history: history.map((sample) => ({
+      at: sample.at,
+      local: sample.local ?? null,
+      cm: sample.cm ?? null,
+      cu: sample.cu ?? null,
+      ct: sample.ct ?? null,
+    })),
+  };
+}
+
 function normalizeProbes(value) {
   const probes = {};
   if (!value || typeof value !== 'object') return probes;
@@ -396,24 +421,6 @@ function normalizeProbes(value) {
   }
 
   return probes;
-}
-
-function newProbeMetric() {
-  return {
-    count: 0,
-    latencySum: 0,
-    averageLatencyMs: null,
-  };
-}
-
-function finalizeProbeMetrics(value) {
-  return Object.fromEntries(Object.entries(value).map(([key, metric]) => [
-    key,
-    {
-      count: metric.count,
-      averageLatencyMs: metric.count ? Math.round(metric.latencySum / metric.count) : null,
-    },
-  ]));
 }
 
 function byId(a, b) {

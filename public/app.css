@@ -264,7 +264,7 @@ h2 {
 
 .traffic-summary {
   display: grid;
-  grid-template-columns: repeat(7, minmax(80px, 1fr));
+  grid-template-columns: repeat(3, minmax(90px, 1fr));
   gap: 10px;
   margin-bottom: 18px;
 }
@@ -320,6 +320,98 @@ h2 {
 .mini-empty {
   border: 1px dashed var(--line);
   border-radius: 8px;
+}
+
+.latency-list {
+  display: grid;
+  gap: 16px;
+}
+
+.latency-node {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.latency-node-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.latency-node-head > span {
+  font-weight: 800;
+}
+
+.latency-current {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.latency-pill {
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.heat-grid {
+  display: grid;
+  gap: 7px;
+}
+
+.heat-row {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.heat-row > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.heat-cells {
+  display: grid;
+  grid-template-columns: repeat(48, minmax(3px, 1fr));
+  gap: 2px;
+}
+
+.heat-cells i {
+  display: block;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.latency-empty {
+  background: #eef1f5;
+  color: var(--muted);
+}
+
+.latency-good {
+  background: #1f9d61;
+  color: #fff;
+}
+
+.latency-ok {
+  background: #8fcf4f;
+  color: #14320f;
+}
+
+.latency-warn {
+  background: #f2b33d;
+  color: #3b2600;
+}
+
+.latency-bad {
+  background: #d6453d;
+  color: #fff;
 }
 
 .grid-form {
@@ -561,5 +653,18 @@ code {
   .dashboard-grid,
   .traffic-summary {
     grid-template-columns: 1fr;
+  }
+
+  .latency-node-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .latency-current {
+    justify-content: flex-start;
+  }
+
+  .heat-row {
+    grid-template-columns: 36px 1fr;
   }
 }
