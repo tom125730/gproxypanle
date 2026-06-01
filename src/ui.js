@@ -154,12 +154,10 @@ export function nodesPage(nodes, certs, editingNode = null) {
       </form>
     </section>
     <section class="table-wrap nodes-wrap">
-      ${table(['Key', 'Name', 'Host', 'Status', 'Traffic', 'Config', 'Docker', 'Agent', 'Remote Deploy', ''], nodes.map((node) => [
+      ${table(['Key', 'Name', 'Host', 'Config', 'Docker', 'Agent', 'Remote Deploy', ''], nodes.map((node) => [
         node.id,
         node.name,
         html(`${escapeHtml(node.host)}:${escapeHtml(node.port)}<br><span class="muted">${escapeHtml(node.sni || '')}</span>`),
-        html(`${nodeStatus(node)}${nodeProbeStatus(node)}`),
-        html(nodeTraffic(node)),
         html(`<a href="/n/${encodeURIComponent(node.id)}/${encodeURIComponent(node.configToken || '')}">config</a>`),
         html(`<button class="copy-command" type="button" data-docker-command data-config-path="/n/${encodeURIComponent(node.id)}/${encodeURIComponent(node.configToken || '')}">Docker command</button>`),
         html(`<button class="copy-command" type="button" data-agent-command data-node-id="${escapeAttr(node.id)}" data-agent-token="${escapeAttr(node.agentToken)}" data-listen="${escapeAttr(node.listen || `0.0.0.0:${node.port}`)}" data-target-host="${escapeAttr(node.host)}" data-target-port="${escapeAttr(node.port)}">Install agent</button>${agentVersion(node)}`),

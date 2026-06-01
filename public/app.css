@@ -586,53 +586,46 @@ button.small {
 
 .nodes-wrap table {
   table-layout: fixed;
-  min-width: 1180px;
+  min-width: 1040px;
 }
 
 .nodes-wrap th:nth-child(1),
 .nodes-wrap td:nth-child(1) {
-  width: 92px;
+  width: 100px;
 }
 
 .nodes-wrap th:nth-child(2),
 .nodes-wrap td:nth-child(2) {
-  width: 120px;
+  width: 140px;
 }
 
 .nodes-wrap th:nth-child(3),
 .nodes-wrap td:nth-child(3) {
-  width: 190px;
+  width: 230px;
 }
 
 .nodes-wrap th:nth-child(4),
 .nodes-wrap td:nth-child(4) {
-  width: 126px;
+  width: 76px;
 }
 
 .nodes-wrap th:nth-child(5),
 .nodes-wrap td:nth-child(5) {
-  width: 80px;
+  width: 156px;
 }
 
 .nodes-wrap th:nth-child(6),
 .nodes-wrap td:nth-child(6) {
-  width: 76px;
-}
-
-.nodes-wrap th:nth-child(7),
-.nodes-wrap td:nth-child(7),
-.nodes-wrap th:nth-child(8),
-.nodes-wrap td:nth-child(8) {
   width: 156px;
 }
 
-.nodes-wrap th:nth-child(9),
-.nodes-wrap td:nth-child(9) {
+.nodes-wrap th:nth-child(7),
+.nodes-wrap td:nth-child(7) {
   width: 250px;
 }
 
-.nodes-wrap th:nth-child(10),
-.nodes-wrap td:nth-child(10) {
+.nodes-wrap th:nth-child(8),
+.nodes-wrap td:nth-child(8) {
   width: 120px;
 }
 
