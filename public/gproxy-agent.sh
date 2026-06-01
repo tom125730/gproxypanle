@@ -54,7 +54,8 @@ WantedBy=multi-user.target
 UNIT
 
   systemctl daemon-reload
-  systemctl enable --now gproxy-agent
+  systemctl enable gproxy-agent
+  systemctl restart gproxy-agent
   systemctl status gproxy-agent --no-pager
 }
 
