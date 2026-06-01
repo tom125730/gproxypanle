@@ -98,7 +98,7 @@ export function nodesPage(nodes, certs, editingNode = null) {
         <label>Certificate
           <select name="certId">
             <option value="">None</option>
-            ${certs.map((cert) => `<option value="${escapeAttr(cert.id)}" ${node.certId === cert.id ? 'selected' : ''}>${escapeHtml(cert.id)}</option>`).join('')}
+            ${certs.map((cert) => `<option value="${escapeAttr(cert.id)}" ${node.certId === cert.id ? 'selected' : ''}>${escapeHtml(certOptionLabel(cert))}</option>`).join('')}
           </select>
         </label>
         <label class="wide">gproxy YAML Config
@@ -234,6 +234,12 @@ function checkbox(name, label, checked) {
     <input type="hidden" name="${escapeAttr(name)}" value="false">
     <input type="checkbox" name="${escapeAttr(name)}" value="true" ${checked ? 'checked' : ''}> ${escapeHtml(label)}
   </label>`;
+}
+
+function certOptionLabel(cert) {
+  if (!cert.domain) return cert.id;
+  if (cert.domain === cert.id) return cert.domain;
+  return `${cert.domain} (${cert.id})`;
 }
 
 function table(headers, rows) {
