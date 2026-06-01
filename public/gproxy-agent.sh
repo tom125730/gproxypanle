@@ -117,6 +117,9 @@ report_once() {
 
   rm -f /etc/gproxy-agent/command-result.json
   handle_command "$response"
+  if [[ -s /etc/gproxy-agent/command-result.json ]]; then
+    report_command_result_now "$payload" || true
+  fi
 }
 
 setup_iptables_counter() {
@@ -235,6 +238,24 @@ with open(sys.argv[2], "r", encoding="utf-8") as fh:
     payload["commandResult"] = json.load(fh)
 print(json.dumps(payload, separators=(",", ":")))
 PY
+}
+
+report_command_result_now() {
+  local base_payload="$1"
+  local result_payload
+
+  result_payload="$(merge_command_result "$base_payload" /etc/gproxy-agent/command-result.json)"
+  curl -fsS --show-error \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -X POST "${PANEL%/}/api/node/${NODE}/agent" \
+    --data "$result_payload" \
+    >/dev/null 2>/tmp/gproxy-agent-command-result.err || {
+      logger -t gproxy-agent "command result report failed: $(tr '\n' ' ' </tmp/gproxy-agent-command-result.err | cut -c1-180)"
+      return 1
+    }
+
+  rm -f /etc/gproxy-agent/command-result.json
 }
 
 handle_command() {
