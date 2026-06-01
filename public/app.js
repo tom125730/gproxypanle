@@ -31,7 +31,7 @@ if (nodeForm) {
 
 document.querySelectorAll('[data-docker-command]').forEach((item) => {
   const configUrl = `${window.location.origin}${item.dataset.configPath}`;
-  item.textContent = `docker rm -f gproxy || true && docker run --network=host --name=gproxy --restart=always -d gproxylabs/gproxy -w -c ${configUrl}`;
+  item.dataset.command = `docker rm -f gproxy || true && docker pull gproxylabs/gproxy && docker run --network=host --name=gproxy --restart=always -d gproxylabs/gproxy -w -c ${configUrl}`;
 });
 
 document.querySelectorAll('[data-renew-command]').forEach((item) => {
@@ -40,7 +40,7 @@ document.querySelectorAll('[data-renew-command]').forEach((item) => {
   const auth = item.dataset.auth;
   const certPath = `/etc/letsencrypt/live/${domain}/fullchain.pem`;
   const keyPath = `/etc/letsencrypt/live/${domain}/privkey.pem`;
-  item.textContent = `certbot renew --deploy-hook "curl -fsS -u '${auth}' --data-urlencode 'cert@${certPath}' --data-urlencode 'key@${keyPath}' ${window.location.origin}/api/cert/${certId}"`;
+  item.dataset.command = `certbot renew --deploy-hook "curl -fsS -u '${auth}' --data-urlencode 'cert@${certPath}' --data-urlencode 'key@${keyPath}' ${window.location.origin}/api/cert/${certId}"`;
 });
 
 document.querySelectorAll('[data-agent-command]').forEach((item) => {
@@ -52,7 +52,20 @@ document.querySelectorAll('[data-agent-command]').forEach((item) => {
     host: item.dataset.targetHost,
     port: item.dataset.targetPort,
   });
-  item.textContent = `curl -fsSL '${window.location.origin}/static/gproxy-agent.sh' | bash -s -- '${params.toString()}'`;
+  item.dataset.command = `curl -fsSL '${window.location.origin}/static/gproxy-agent.sh' | bash -s -- '${params.toString()}'`;
+});
+
+document.querySelectorAll('[data-command]').forEach((item) => {
+  item.addEventListener('click', async () => {
+    await copyText(item.dataset.command || '');
+    const original = item.textContent;
+    item.textContent = 'Copied';
+    item.classList.add('copied');
+    window.setTimeout(() => {
+      item.textContent = original;
+      item.classList.remove('copied');
+    }, 1300);
+  });
 });
 
 function buildNodeYaml(form) {
@@ -116,4 +129,21 @@ function yamlString(value) {
 function isChecked(form, name) {
   const checkbox = form.querySelector(`input[type="checkbox"][name="${name}"]`);
   return Boolean(checkbox && checkbox.checked);
+}
+
+async function copyText(value) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  textarea.remove();
 }

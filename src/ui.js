@@ -161,8 +161,8 @@ export function nodesPage(nodes, certs, editingNode = null) {
         html(`${nodeStatus(node)}${nodeProbeStatus(node)}`),
         html(nodeTraffic(node)),
         html(`<a href="/n/${encodeURIComponent(node.id)}/${encodeURIComponent(node.configToken || '')}">config</a>`),
-        html(`<code class="docker-command" data-docker-command data-config-path="/n/${encodeURIComponent(node.id)}/${encodeURIComponent(node.configToken || '')}"></code>`),
-        html(`<code class="agent-command" data-agent-command data-node-id="${escapeAttr(node.id)}" data-agent-token="${escapeAttr(node.agentToken)}" data-listen="${escapeAttr(node.listen || `0.0.0.0:${node.port}`)}" data-target-host="${escapeAttr(node.host)}" data-target-port="${escapeAttr(node.port)}"></code>`),
+        html(`<button class="copy-command" type="button" data-docker-command data-config-path="/n/${encodeURIComponent(node.id)}/${encodeURIComponent(node.configToken || '')}">Docker command</button>`),
+        html(`<button class="copy-command" type="button" data-agent-command data-node-id="${escapeAttr(node.id)}" data-agent-token="${escapeAttr(node.agentToken)}" data-listen="${escapeAttr(node.listen || `0.0.0.0:${node.port}`)}" data-target-host="${escapeAttr(node.host)}" data-target-port="${escapeAttr(node.port)}">Install agent</button>`),
         html(`${deployForm(node)}${deployStatus(node.agentCommand)}`),
         html(`<div class="row-actions"><a class="button-link small" href="/nodes/${encodeURIComponent(node.id)}/edit">Edit</a>${deleteForm(`/api/node/${encodeURIComponent(node.id)}`)}</div>`),
       ]))}
@@ -220,7 +220,7 @@ export function certificatesPage(certs, editingCert = null, adminAuth = 'admin:A
         cert.notAfter,
         cert.daysRemaining ?? '',
         html(`<a href="/c/${encodeURIComponent(cert.id)}/cert">cert</a> <a href="/c/${encodeURIComponent(cert.id)}/key">key</a>`),
-        html(`<code class="renew-command" data-renew-command data-cert-id="${escapeAttr(cert.id)}" data-domain="${escapeAttr(cert.domain || cert.id)}" data-auth="${escapeAttr(adminAuth)}"></code>`),
+        html(`<button class="copy-command" type="button" data-renew-command data-cert-id="${escapeAttr(cert.id)}" data-domain="${escapeAttr(cert.domain || cert.id)}" data-auth="${escapeAttr(adminAuth)}">Renew hook</button>`),
         html(`<div class="row-actions"><a class="button-link small" href="/certificates/${encodeURIComponent(cert.id)}/edit">Edit</a>${deleteForm(`/api/cert/${encodeURIComponent(cert.id)}`)}</div>`),
       ]))}
     </section>

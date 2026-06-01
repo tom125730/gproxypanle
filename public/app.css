@@ -651,20 +651,16 @@ code {
   word-break: break-all;
 }
 
-.docker-command,
-.renew-command,
-.agent-command {
-  display: block;
-  max-width: 360px;
-  color: var(--text);
+.copy-command {
+  min-height: 34px;
+  white-space: nowrap;
+  background: #344254;
+  padding: 7px 10px;
+  font-size: 13px;
 }
 
-.renew-command {
-  max-width: 520px;
-}
-
-.agent-command {
-  max-width: 520px;
+.copy-command.copied {
+  background: #20a464;
 }
 
 .status {
