@@ -258,6 +258,12 @@ journalctl -u gproxy-agent -f
 systemctl restart gproxy-agent
 ```
 
+The Nodes page can enqueue a restricted remote deploy action through the agent.
+The agent does not run arbitrary panel commands; it only accepts the fixed
+`deploy-docker` action and recreates the `gproxy` Docker container with the
+panel-generated config URL. For existing nodes, update the agent first by
+rerunning the Agent command from `/nodes`.
+
 If tri-network latency shows `no data`, the node is likely still running an old
 agent. Update it on the node VPS:
 

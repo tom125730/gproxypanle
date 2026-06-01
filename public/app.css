@@ -543,6 +543,17 @@ button.danger {
   background: var(--danger);
 }
 
+button.small {
+  min-height: 34px;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+.deploy-status {
+  margin-top: 8px;
+  min-width: 120px;
+}
+
 .table-wrap {
   overflow: auto;
 }

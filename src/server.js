@@ -163,6 +163,9 @@ async function apiRoute(req, res, segments) {
     const node = store.getNode(segments[1]);
     return node ? sendJson(res, 200, node) : notFound(res);
   }
+  if (method === 'POST' && segments[0] === 'node' && segments[1] && segments[2] === 'deploy') {
+    return createNodeDeployCommand(req, res, segments[1]);
+  }
   if (method === 'POST' && segments[0] === 'node') {
     const input = await readBody(req);
     const id = segments[1] || input.id;
@@ -229,8 +232,61 @@ async function nodeAgentRoute(req, res, nodeId) {
     return sendJson(res, 401, { error: 'invalid node agent token' });
   }
 
-  const agent = await store.recordNodeAgentReport(nodeId, await readBody(req), clientAddress(req));
-  return sendJson(res, 200, { ok: true, agent });
+  const input = await readBody(req);
+  if (input.commandResult && typeof input.commandResult === 'object') {
+    await recordNodeCommandResult(nodeId, node, input.commandResult);
+  }
+
+  const updatedNode = await store.recordNodeAgentReport(nodeId, input, clientAddress(req));
+  return sendJson(res, 200, {
+    ok: true,
+    agent: updatedNode.agent,
+    command: pendingAgentCommand(updatedNode),
+  });
+}
+
+async function createNodeDeployCommand(req, res, nodeId) {
+  const node = store.getNode(nodeId);
+  if (!node) return notFound(res);
+
+  const publicBaseUrl = store.settings().publicBaseUrl || requestBaseUrl(req);
+  const configPath = `/n/${encodeURIComponent(node.id)}/${encodeURIComponent(node.configToken || '')}`;
+  const command = {
+    id: crypto.randomUUID(),
+    type: 'deploy-docker',
+    status: 'pending',
+    configUrl: `${publicBaseUrl.replace(/\/+$/, '')}${configPath}`,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  await store.setNodeAgentCommand(nodeId, command);
+  return wantsJson(req) ? sendJson(res, 200, { ok: true, command }) : redirect(res, '/nodes');
+}
+
+async function recordNodeCommandResult(nodeId, node, result) {
+  const command = node.agentCommand;
+  if (!command || result.id !== command.id) return;
+
+  await store.setNodeAgentCommand(nodeId, {
+    ...command,
+    status: result.ok ? 'succeeded' : 'failed',
+    exitCode: Number(result.exitCode ?? 0),
+    output: String(result.output || '').slice(0, 2000),
+    error: String(result.error || '').slice(0, 1000),
+    finishedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+function pendingAgentCommand(node) {
+  const command = node.agentCommand;
+  if (!command || command.status !== 'pending') return null;
+  return {
+    id: command.id,
+    type: command.type,
+    configUrl: command.configUrl,
+  };
 }
 
 function requireAuth(req, res, url) {
@@ -328,6 +384,11 @@ function safeEqual(left, right) {
 function clientAddress(req) {
   const forwardedFor = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
   return forwardedFor || req.socket.remoteAddress || '';
+}
+
+function requestBaseUrl(req) {
+  const protocol = String(req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim() || 'http';
+  return `${protocol}://${req.headers.host || 'localhost'}`;
 }
 
 function loginAttemptKey(req, username) {

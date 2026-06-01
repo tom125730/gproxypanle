@@ -154,7 +154,7 @@ export function nodesPage(nodes, certs, editingNode = null) {
       </form>
     </section>
     <section class="table-wrap">
-      ${table(['Key', 'Name', 'Host', 'Status', 'Traffic', 'Config', 'Docker', 'Agent', ''], nodes.map((node) => [
+      ${table(['Key', 'Name', 'Host', 'Status', 'Traffic', 'Config', 'Docker', 'Agent', 'Remote Deploy', ''], nodes.map((node) => [
         node.id,
         node.name,
         html(`${escapeHtml(node.host)}:${escapeHtml(node.port)}<br><span class="muted">${escapeHtml(node.sni || '')}</span>`),
@@ -163,6 +163,7 @@ export function nodesPage(nodes, certs, editingNode = null) {
         html(`<a href="/n/${encodeURIComponent(node.id)}/${encodeURIComponent(node.configToken || '')}">config</a>`),
         html(`<code class="docker-command" data-docker-command data-config-path="/n/${encodeURIComponent(node.id)}/${encodeURIComponent(node.configToken || '')}"></code>`),
         html(`<code class="agent-command" data-agent-command data-node-id="${escapeAttr(node.id)}" data-agent-token="${escapeAttr(node.agentToken)}" data-listen="${escapeAttr(node.listen || `0.0.0.0:${node.port}`)}" data-target-host="${escapeAttr(node.host)}" data-target-port="${escapeAttr(node.port)}"></code>`),
+        html(`${deployForm(node)}${deployStatus(node.agentCommand)}`),
         html(`<div class="row-actions"><a class="button-link small" href="/nodes/${encodeURIComponent(node.id)}/edit">Edit</a>${deleteForm(`/api/node/${encodeURIComponent(node.id)}`)}</div>`),
       ]))}
     </section>
@@ -562,6 +563,23 @@ function table(headers, rows) {
 
 function deleteForm(action) {
   return `<form method="post" action="${escapeAttr(action)}"><input type="hidden" name="_method" value="DELETE"><button class="danger" type="submit">Delete</button></form>`;
+}
+
+function deployForm(node) {
+  return `<form method="post" action="/api/node/${encodeURIComponent(node.id)}/deploy"><button class="small" type="submit">Deploy</button></form>`;
+}
+
+function deployStatus(command) {
+  if (!command) return '<span class="muted">no command</span>';
+  const status = command.status || 'pending';
+  const label = {
+    pending: 'pending',
+    succeeded: 'succeeded',
+    failed: 'failed',
+  }[status] || status;
+  const detail = command.finishedAt || command.createdAt || '';
+  const error = command.error ? `<br><span class="muted">${escapeHtml(command.error)}</span>` : '';
+  return `<div class="deploy-status"><span class="status status-${status === 'succeeded' ? 'up' : status === 'failed' ? 'down' : 'waiting'}">${escapeHtml(label.toUpperCase())}</span><br><span class="muted">${escapeHtml(detail)}</span>${error}</div>`;
 }
 
 function html(value) {

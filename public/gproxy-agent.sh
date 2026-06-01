@@ -78,7 +78,7 @@ run_agent() {
 
 report_once() {
   local listen_port="$1"
-  local start end latency status error connections rx tx uptime probes_json
+  local start end latency status error connections rx tx uptime probes_json payload response
 
   start="$(now_ms)"
   error=""
@@ -100,13 +100,23 @@ report_once() {
   tx="$(iptables_bytes OUTPUT "$listen_port")"
   uptime="$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)"
   probes_json="$(probe_targets_json)"
+  payload="$(json_payload "$status" "$latency" "$error" "$connections" "$rx" "$tx" "$uptime" "$probes_json")"
+  if [[ -s /etc/gproxy-agent/command-result.json ]]; then
+    payload="$(merge_command_result "$payload" /etc/gproxy-agent/command-result.json)"
+  fi
 
-  curl -fsS --show-error \
+  response="$(curl -fsS --show-error \
     -H "Authorization: Bearer ${TOKEN}" \
     -H "Content-Type: application/json" \
     -X POST "${PANEL%/}/api/node/${NODE}/agent" \
-    --data "$(json_payload "$status" "$latency" "$error" "$connections" "$rx" "$tx" "$uptime" "$probes_json")" \
-    >/dev/null 2>/tmp/gproxy-agent-report.err || logger -t gproxy-agent "report failed: $(tr '\n' ' ' </tmp/gproxy-agent-report.err | cut -c1-180)"
+    --data "$payload" \
+    2>/tmp/gproxy-agent-report.err)" || {
+      logger -t gproxy-agent "report failed: $(tr '\n' ' ' </tmp/gproxy-agent-report.err | cut -c1-180)"
+      return 0
+    }
+
+  rm -f /etc/gproxy-agent/command-result.json
+  handle_command "$response"
 }
 
 setup_iptables_counter() {
@@ -210,8 +220,111 @@ print(json.dumps({
     "txBytes": int(tx),
     "uptimeSeconds": int(uptime),
     "probes": probe_value,
-    "version": "shell-2",
+    "version": "shell-3",
 }))
+PY
+}
+
+merge_command_result() {
+  python3 - "$1" "$2" <<'PY'
+import json
+import sys
+
+payload = json.loads(sys.argv[1])
+with open(sys.argv[2], "r", encoding="utf-8") as fh:
+    payload["commandResult"] = json.load(fh)
+print(json.dumps(payload, separators=(",", ":")))
+PY
+}
+
+handle_command() {
+  local response="$1"
+  local command_json command_type command_id config_url
+  command_json="$(python3 - "$response" <<'PY'
+import json
+import sys
+
+try:
+    command = json.loads(sys.argv[1]).get("command")
+except Exception:
+    command = None
+
+print(json.dumps(command or {}, separators=(",", ":")))
+PY
+)"
+
+  command_type="$(python3 - "$command_json" <<'PY'
+import json, sys
+print(json.loads(sys.argv[1]).get("type", ""))
+PY
+)"
+  if [[ "$command_type" != "deploy-docker" ]]; then
+    return 0
+  fi
+
+  command_id="$(python3 - "$command_json" <<'PY'
+import json, sys
+print(json.loads(sys.argv[1]).get("id", ""))
+PY
+)"
+  config_url="$(python3 - "$command_json" <<'PY'
+import json, sys
+print(json.loads(sys.argv[1]).get("configUrl", ""))
+PY
+)"
+  run_deploy_docker "$command_id" "$config_url"
+}
+
+run_deploy_docker() {
+  local command_id="$1"
+  local config_url="$2"
+  local output exit_code
+
+  if [[ -z "$command_id" || -z "$config_url" ]]; then
+    write_command_result "$command_id" false 2 "" "missing deploy command fields"
+    return 0
+  fi
+  if [[ "$config_url" != http://* && "$config_url" != https://* ]]; then
+    write_command_result "$command_id" false 2 "" "invalid config url"
+    return 0
+  fi
+  if ! command -v docker >/dev/null 2>&1; then
+    write_command_result "$command_id" false 127 "" "docker command not found"
+    return 0
+  fi
+
+  set +e
+  output="$(docker rm -f gproxy 2>&1; docker run --network=host --name=gproxy --restart=always -d gproxylabs/gproxy -w -c "$config_url" 2>&1)"
+  exit_code=$?
+  set -e
+
+  if [[ "$exit_code" -eq 0 ]]; then
+    write_command_result "$command_id" true "$exit_code" "$output" ""
+  else
+    write_command_result "$command_id" false "$exit_code" "$output" "docker deploy failed"
+  fi
+}
+
+write_command_result() {
+  local command_id="$1"
+  local ok="$2"
+  local exit_code="$3"
+  local output="$4"
+  local error="$5"
+  python3 - "$command_id" "$ok" "$exit_code" "$output" "$error" <<'PY'
+import json
+import sys
+
+command_id, ok, exit_code, output, error = sys.argv[1:]
+payload = {
+    "id": command_id,
+    "ok": ok == "true",
+    "exitCode": int(exit_code or 0),
+    "output": output[-2000:],
+    "error": error[-1000:],
+}
+with open("/etc/gproxy-agent/command-result.json", "w", encoding="utf-8") as fh:
+    json.dump(payload, fh, separators=(",", ":"))
 PY
 }
 

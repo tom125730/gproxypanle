@@ -144,6 +144,7 @@ export class JsonStore {
       configToken: input.configToken || previous.configToken || newAccessToken(),
       agentToken: input.agentToken || previous.agentToken || newAgentToken(),
       agent: previous.agent || null,
+      agentCommand: previous.agentCommand || null,
       socks5: toBool(input.socks5, previous.socks5 ?? false),
       relay: toBool(input.relay, previous.relay ?? false),
       wspaths: input.wspaths || previous.wspaths || '/gproxy',
@@ -189,7 +190,23 @@ export class JsonStore {
     node.latencyHistory = appendLatencySample(node.latencyHistory, node.agent, now);
 
     await this.save();
-    return withNodeAgentStatus(node).agent;
+    return withNodeAgentStatus(node);
+  }
+
+  async setNodeAgentCommand(id, command) {
+    const node = this.db.nodes[id];
+    if (!node) return null;
+    node.agentCommand = command;
+    await this.save();
+    return withNodeAgentStatus(node);
+  }
+
+  async clearNodeAgentCommand(id) {
+    const node = this.db.nodes[id];
+    if (!node) return null;
+    node.agentCommand = null;
+    await this.save();
+    return withNodeAgentStatus(node);
   }
 
   async deleteNode(id) {
