@@ -514,6 +514,55 @@ button.danger {
   overflow: auto;
 }
 
+.report-wrap table {
+  min-width: 820px;
+}
+
+.report-wrap th:nth-child(1),
+.report-wrap td:nth-child(1) {
+  width: 92px;
+}
+
+.report-wrap th:nth-child(2),
+.report-wrap td:nth-child(2) {
+  width: 170px;
+}
+
+.report-wrap th:nth-child(4),
+.report-wrap td:nth-child(4) {
+  width: 210px;
+}
+
+.report-wrap th:nth-child(5),
+.report-wrap td:nth-child(5) {
+  width: 120px;
+}
+
+.report-key {
+  display: inline-block;
+  max-width: 86px;
+  overflow-wrap: anywhere;
+  line-height: 1.2;
+}
+
+.report-name {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 8px;
+  border-left: 3px solid #f05252;
+  color: var(--text);
+}
+
+.report-status {
+  min-width: 180px;
+}
+
+.report-traffic {
+  line-height: 1.45;
+  white-space: nowrap;
+}
+
 table {
   border-collapse: collapse;
   width: 100%;

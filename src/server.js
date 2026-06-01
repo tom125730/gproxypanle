@@ -10,6 +10,7 @@ import {
   dashboardPage,
   loginPage,
   nodesPage,
+  reportPage,
   settingsPage,
   subscriptionsPage,
   usersPage,
@@ -100,6 +101,7 @@ async function route(req, res) {
   if (!requireAuth(req, res, url)) return;
 
   if (req.method === 'GET' && url.pathname === '/') return sendHtml(res, dashboardPage(store.metrics()));
+  if (req.method === 'GET' && url.pathname === '/report') return sendHtml(res, reportPage(store.listNodes()));
   if (req.method === 'GET' && url.pathname === '/nodes') return sendHtml(res, nodesPage(store.listNodes(), store.listCerts()));
   if (req.method === 'GET' && segments[0] === 'nodes' && segments[1] && segments[2] === 'edit') {
     const node = store.getNode(segments[1]);

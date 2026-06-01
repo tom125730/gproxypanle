@@ -1,6 +1,7 @@
 export function layout(title, active, body) {
   const nav = [
     ['/', 'Dashboard'],
+    ['/report', 'Report'],
     ['/nodes', 'Nodes'],
     ['/certificates', 'Certificates'],
     ['/subscriptions', 'Subscriptions'],
@@ -155,6 +156,26 @@ export function nodesPage(nodes, certs, editingNode = null) {
         `<code class="docker-command" data-docker-command data-config-path="/n/${encodeURIComponent(node.id)}"></code>`,
         `<code class="agent-command" data-agent-command data-node-id="${escapeAttr(node.id)}" data-agent-token="${escapeAttr(node.agentToken)}" data-listen="${escapeAttr(node.listen || `0.0.0.0:${node.port}`)}" data-target-host="${escapeAttr(node.host)}" data-target-port="${escapeAttr(node.port)}"></code>`,
         `<div class="row-actions"><a class="button-link small" href="/nodes/${encodeURIComponent(node.id)}/edit">Edit</a>${deleteForm(`/api/node/${encodeURIComponent(node.id)}`)}</div>`,
+      ]))}
+    </section>
+  `);
+}
+
+export function reportPage(nodes) {
+  return layout('Report', 'Report', `
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Node Monitor</p>
+        <h1>Report</h1>
+      </div>
+    </header>
+    <section class="table-wrap report-wrap">
+      ${table(['Key', 'Name', 'Host', 'Status', 'Traffic'], nodes.map((node) => [
+        `<span class="report-key">${escapeHtml(node.id)}</span>`,
+        `<strong class="report-name">${escapeHtml(node.name)}</strong>`,
+        `${escapeHtml(node.host)}:${escapeHtml(node.port)}<br><span class="muted">${escapeHtml(node.sni || '')}</span>`,
+        `<div class="report-status">${nodeStatus(node)}${nodeProbeStatus(node)}</div>`,
+        `<div class="report-traffic">${nodeTraffic(node)}</div>`,
       ]))}
     </section>
   `);
