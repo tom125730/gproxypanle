@@ -224,6 +224,24 @@ journalctl -u gproxy-agent -f
 systemctl restart gproxy-agent
 ```
 
+If tri-network latency shows `no data`, the node is likely still running an old
+agent. Update it on the node VPS:
+
+```bash
+curl -fsSL https://your-panel.example/static/gproxy-agent.sh -o /usr/local/bin/gproxy-agent
+chmod 0755 /usr/local/bin/gproxy-agent
+systemctl restart gproxy-agent
+```
+
+If it shows `down`, test DNS and TCP connectivity from that node VPS:
+
+```bash
+getent hosts js-cm-v4.ip.zstaticcdn.com js-cu-v4.ip.zstaticcdn.com js-ct-v4.ip.zstaticcdn.com
+timeout 3 bash -c 'cat < /dev/null > /dev/tcp/js-cm-v4.ip.zstaticcdn.com/80'
+timeout 3 bash -c 'cat < /dev/null > /dev/tcp/js-cu-v4.ip.zstaticcdn.com/80'
+timeout 3 bash -c 'cat < /dev/null > /dev/tcp/js-ct-v4.ip.zstaticcdn.com/80'
+```
+
 ### Logs and storage growth
 
 The panel stores only the latest node metrics in `data/db.json`; it does not keep

@@ -210,7 +210,7 @@ print(json.dumps({
     "txBytes": int(tx),
     "uptimeSeconds": int(uptime),
     "probes": probe_value,
-    "version": "shell-1",
+    "version": "shell-2",
 }))
 PY
 }

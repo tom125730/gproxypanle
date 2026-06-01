@@ -344,9 +344,14 @@ function nodeProbeStatus(node) {
     ['ct', 'CT'],
   ].map(([key, label]) => {
     const probe = probes[key];
-    const state = probe?.status || 'waiting';
-    const value = probe?.latencyMs === null || probe?.latencyMs === undefined ? 'n/a' : `${probe.latencyMs}ms`;
-    return `<span class="probe probe-${escapeAttr(state)}">${escapeHtml(label)} ${escapeHtml(value)}</span>`;
+    if (!probe) {
+      return `<span class="probe probe-waiting">${escapeHtml(label)} no data</span>`;
+    }
+
+    const state = probe.status || 'waiting';
+    const value = probe.latencyMs === null || probe.latencyMs === undefined ? state : `${probe.latencyMs}ms`;
+    const title = probe.error ? ` title="${escapeAttr(probe.error)}"` : '';
+    return `<span class="probe probe-${escapeAttr(state)}"${title}>${escapeHtml(label)} ${escapeHtml(value)}</span>`;
   }).join('');
 
   return `<div class="probe-list">${items}</div>`;

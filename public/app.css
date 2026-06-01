@@ -526,6 +526,11 @@ code {
   color: var(--danger);
 }
 
+.probe-waiting {
+  background: #fff7df;
+  color: #8a5a00;
+}
+
 .empty {
   color: var(--muted);
   text-align: center;
