@@ -1,7 +1,7 @@
 export function nodeConfigYaml(node, publicBaseUrl = '') {
   if (node.yaml && node.yaml.trim()) return node.yaml.trimEnd() + '\n';
-  const certUrl = node.certId ? absoluteUrl(publicBaseUrl, `/c/${node.certId}/cert`) : '';
-  const keyUrl = node.certId ? absoluteUrl(publicBaseUrl, `/c/${node.certId}/key`) : '';
+  const certUrl = node.certId ? absoluteUrl(publicBaseUrl, `/n/${node.id}/${node.configToken}/cert`) : '';
+  const keyUrl = node.certId ? absoluteUrl(publicBaseUrl, `/n/${node.id}/${node.configToken}/key`) : '';
   const secrets = splitList(node.password);
   const wspaths = splitList(node.wspaths);
 

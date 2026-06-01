@@ -26,13 +26,18 @@ const config = {
   sessionSecret: process.env.SESSION_SECRET || process.env.ADMIN_PASS || 'Aa.114514',
   dataFile: process.env.DATA_FILE || path.resolve(__dirname, '..', 'data', 'db.json'),
   publicBaseUrl: process.env.PUBLIC_BASE_URL || '',
+  maxBodyBytes: Number(process.env.MAX_BODY_BYTES || 1048576),
+  secureCookies: process.env.COOKIE_SECURE === 'true' || (process.env.PUBLIC_BASE_URL || '').startsWith('https://'),
 };
+
+const loginAttempts = new Map();
 
 const store = new JsonStore(config.dataFile);
 await store.load();
 if (config.publicBaseUrl && !store.settings().publicBaseUrl) {
   await store.updateSettings({ publicBaseUrl: config.publicBaseUrl });
 }
+warnInsecureDefaults();
 await ensureAdminPasswordHash();
 
 const server = http.createServer(async (req, res) => {
@@ -40,6 +45,9 @@ const server = http.createServer(async (req, res) => {
     await route(req, res);
   } catch (error) {
     console.error(error);
+    if (error.statusCode === 413) {
+      return send(res, 413, 'Payload Too Large\n', 'text/plain; charset=utf-8');
+    }
     send(res, 500, 'Internal Server Error\n', 'text/plain; charset=utf-8');
   }
 });
@@ -59,6 +67,13 @@ async function route(req, res) {
   if (segments[0] === 'n' && segments[1]) {
     const node = store.getNode(segments[1]);
     if (!node || !node.enabled) return notFound(res);
+    if (!segments[2] || !safeEqual(segments[2], node.configToken || '')) return notFound(res);
+    if (segments[3] === 'cert' || segments[3] === 'key') {
+      const cert = node.certId ? store.getCert(node.certId) : null;
+      if (!cert) return notFound(res);
+      if (segments[3] === 'cert') return send(res, 200, cert.cert || '', 'application/x-pem-file; charset=utf-8');
+      return send(res, 200, cert.key || '', 'application/x-pem-file; charset=utf-8');
+    }
     const publicBaseUrl = store.settings().publicBaseUrl || `${url.protocol}//${url.host}`;
     const configYaml = nodeConfigYaml(node, publicBaseUrl);
     return send(res, 200, configYaml, 'text/yaml; charset=utf-8');
@@ -68,6 +83,7 @@ async function route(req, res) {
     const cert = store.getCert(segments[1]);
     if (!cert) return notFound(res);
     if (segments[2] === 'cert') return send(res, 200, cert.cert || '', 'application/x-pem-file; charset=utf-8');
+    if (segments[2] === 'key' && !isAuthenticated(req, url)) return notFound(res);
     if (segments[2] === 'key') return send(res, 200, cert.key || '', 'application/x-pem-file; charset=utf-8');
   }
 
@@ -84,10 +100,16 @@ async function route(req, res) {
   }
   if (req.method === 'POST' && url.pathname === '/login') {
     const input = await readBody(req);
+    const loginKey = loginAttemptKey(req, input.username || '');
+    if (isLoginLocked(loginKey)) {
+      return redirect(res, '/login?error=Too%20many%20login%20attempts%2C%20try%20again%20later');
+    }
     if (await verifyAdminLogin(input)) {
+      clearLoginAttempts(loginKey);
       setSession(res, securityVersion());
       return redirect(res, '/');
     }
+    recordFailedLogin(loginKey);
     return redirect(res, '/login?error=Invalid%20username%20or%20password');
   }
   if (req.method === 'POST' && url.pathname === '/logout') {
@@ -275,11 +297,15 @@ function hasValidSession(req) {
 
 function setSession(res, version) {
   const value = `${config.adminUser}.${version}.${signSession(config.adminUser, version)}`;
-  res.setHeader('Set-Cookie', `gproxy_session=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800`);
+  res.setHeader('Set-Cookie', sessionCookie(`gproxy_session=${value}; Max-Age=604800`));
 }
 
 function clearSession(res) {
-  res.setHeader('Set-Cookie', 'gproxy_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0');
+  res.setHeader('Set-Cookie', sessionCookie('gproxy_session=; Max-Age=0'));
+}
+
+function sessionCookie(value) {
+  return `${value}; HttpOnly; SameSite=Lax; Path=/${config.secureCookies ? '; Secure' : ''}`;
 }
 
 function signSession(user, version) {
@@ -304,8 +330,45 @@ function clientAddress(req) {
   return forwardedFor || req.socket.remoteAddress || '';
 }
 
+function loginAttemptKey(req, username) {
+  return `${clientAddress(req)}:${String(username).slice(0, 80)}`;
+}
+
+function isLoginLocked(key) {
+  const attempt = loginAttempts.get(key);
+  if (!attempt) return false;
+  if (attempt.lockedUntil && attempt.lockedUntil > Date.now()) return true;
+  if (attempt.lockedUntil) loginAttempts.delete(key);
+  return false;
+}
+
+function recordFailedLogin(key) {
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000;
+  const attempt = loginAttempts.get(key);
+  const count = attempt && attempt.firstAt + windowMs > now ? attempt.count + 1 : 1;
+  loginAttempts.set(key, {
+    count,
+    firstAt: attempt && attempt.firstAt + windowMs > now ? attempt.firstAt : now,
+    lockedUntil: count >= 6 ? now + windowMs : 0,
+  });
+}
+
+function clearLoginAttempts(key) {
+  loginAttempts.delete(key);
+}
+
 function adminAuthPair() {
   return `${config.adminUser}:${config.adminPass}`;
+}
+
+function warnInsecureDefaults() {
+  if (!process.env.ADMIN_PASS) {
+    console.warn('WARNING: ADMIN_PASS is not set. Set a strong ADMIN_PASS before exposing this panel.');
+  }
+  if (!process.env.SESSION_SECRET) {
+    console.warn('WARNING: SESSION_SECRET is not set. Set a long random SESSION_SECRET before exposing this panel.');
+  }
 }
 
 async function updatePasswordRoute(req, res) {
@@ -523,7 +586,16 @@ async function readBody(req) {
   if (req.cachedBody) return req.cachedBody;
 
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > config.maxBodyBytes) {
+      const error = new Error('request body too large');
+      error.statusCode = 413;
+      throw error;
+    }
+    chunks.push(chunk);
+  }
   const raw = Buffer.concat(chunks).toString('utf8');
   const contentType = req.headers['content-type'] || '';
 
@@ -577,6 +649,10 @@ function send(res, status, body, contentType) {
   res.writeHead(status, {
     'Content-Type': contentType,
     'Cache-Control': 'no-store',
+    'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'no-referrer',
   });
   res.end(body);
 }

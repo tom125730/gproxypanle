@@ -141,6 +141,7 @@ export class JsonStore {
       sni: input.sni || previous.sni || input.host || '',
       password: input.password || previous.password || defaultNodeSecret,
       certId: input.certId || previous.certId || '',
+      configToken: input.configToken || previous.configToken || newAccessToken(),
       agentToken: input.agentToken || previous.agentToken || newAgentToken(),
       agent: previous.agent || null,
       socks5: toBool(input.socks5, previous.socks5 ?? false),
@@ -305,9 +306,10 @@ function mergeDb(value = {}) {
     const normalized = {
       ...node,
       id,
+      configToken: node.configToken || newAccessToken(),
       agentToken: node.agentToken || newAgentToken(),
     };
-    if (!node.agentToken || node.id !== id) changed = true;
+    if (!node.configToken || !node.agentToken || node.id !== id) changed = true;
     nodes[id] = normalized;
   }
 
@@ -368,6 +370,10 @@ function withNodeAgentStatus(node) {
 }
 
 function newAgentToken() {
+  return newAccessToken();
+}
+
+function newAccessToken() {
   return crypto.randomBytes(24).toString('base64url');
 }
 

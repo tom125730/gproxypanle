@@ -62,8 +62,11 @@ function buildNodeYaml(form) {
   const secrets = splitList(data.get('password') || '3c999130');
   const wspaths = splitList(data.get('wspaths') || '/gproxy');
   const certId = data.get('certId') || '';
-  const certUrl = certId ? `${window.location.origin}/c/${certId}/cert` : '';
-  const keyUrl = certId ? `${window.location.origin}/c/${certId}/key` : '';
+  const nodeId = data.get('id') || '';
+  const configToken = data.get('configToken') || '';
+  const certBasePath = nodeId && configToken ? `/n/${nodeId}/${configToken}` : '';
+  const certUrl = certId && certBasePath ? `${window.location.origin}${certBasePath}/cert` : '';
+  const keyUrl = certId && certBasePath ? `${window.location.origin}${certBasePath}/key` : '';
 
   return [
     'log:',

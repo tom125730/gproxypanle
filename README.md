@@ -44,6 +44,17 @@ When 2FA is enabled, browser sessions must sign in with username, password, and
 the 6-digit TOTP code. HTTP Basic Auth is limited to certificate upload routes
 so existing certificate renewal hooks can continue to run.
 
+For public deployments:
+
+- Set strong `ADMIN_PASS` and `SESSION_SECRET` values before first start.
+- Use HTTPS and set `PUBLIC_BASE_URL=https://your-domain.example` so session
+  cookies are marked `Secure`.
+- Keep `/opt/gproxypanle/data/db.json` readable only by the service user because
+  it contains node secrets, subscription tokens, certificate private keys, and
+  2FA secrets.
+- Node config URLs include a per-node random token. Rotate a node by editing it
+  and changing its config command if the URL is exposed.
+
 ## VPS Deployment
 
 The examples below assume an Ubuntu/Debian VPS, a DNS record already pointing to
@@ -184,6 +195,10 @@ git pull
 systemctl restart gproxypanel
 ```
 
+If the update introduces tokenized node config URLs, open `/nodes`, copy each
+node's updated Docker command, and rerun it on that node VPS. Old `/n/:nodeKey`
+config URLs are intentionally rejected.
+
 ## Node Monitoring Agent
 
 The panel does not proxy traffic, so it cannot read real node traffic by itself.
@@ -316,9 +331,10 @@ Admin API:
 
 Public distribution:
 
-- `GET /n/:nodeKey`
+- `GET /n/:nodeKey/:configToken`
+- `GET /n/:nodeKey/:configToken/cert`
+- `GET /n/:nodeKey/:configToken/key`
 - `GET /c/:id/cert`
-- `GET /c/:id/key`
 
 Certificate API also accepts HTTP Basic Auth, so renewal hooks can post updated
 PEM files without using a browser session cookie.
@@ -334,11 +350,12 @@ This is intentionally simple for VPS deployment. The storage code is isolated in
 
 ## Node Config
 
-`/n/:nodeKey` returns the exact YAML saved in the node's `yaml` field. If that
-field is empty, the panel generates a minimal gproxy config:
+`/n/:nodeKey/:configToken` returns the exact YAML saved in the node's `yaml`
+field. If that field is empty, the panel generates a minimal gproxy config:
 
 - `inbound.listen` from the node listen address
 - `inbound.secrets` from the node secrets field
-- optional remote cert/key URLs from the selected certificate
+- optional per-node token-protected remote cert/key URLs from the selected
+  certificate
 - one `direct://` outbound
 - `MATCH,direct` router rule

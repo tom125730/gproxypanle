@@ -126,6 +126,7 @@ export function nodesPage(nodes, certs, editingNode = null) {
     <section class="panel">
       <form method="post" action="${action}" class="grid-form node-form" data-node-form>
         ${input('id', 'Node Key', 'hk01', true, node.id || '', isEditing ? 'readonly' : '')}
+        <input type="hidden" name="configToken" value="${escapeAttr(node.configToken || '')}">
         ${input('name', 'Name', 'Hong Kong 01', false, node.name || '')}
         ${input('host', 'Host', 'hk.example.com', false, node.host || '')}
         ${input('port', 'Port', '443', false, node.port || '443')}
@@ -156,13 +157,13 @@ export function nodesPage(nodes, certs, editingNode = null) {
       ${table(['Key', 'Name', 'Host', 'Status', 'Traffic', 'Config', 'Docker', 'Agent', ''], nodes.map((node) => [
         node.id,
         node.name,
-        `${escapeHtml(node.host)}:${escapeHtml(node.port)}<br><span class="muted">${escapeHtml(node.sni || '')}</span>`,
-        `${nodeStatus(node)}${nodeProbeStatus(node)}`,
-        nodeTraffic(node),
-        `<a href="/n/${encodeURIComponent(node.id)}">/n/${escapeHtml(node.id)}</a>`,
-        `<code class="docker-command" data-docker-command data-config-path="/n/${encodeURIComponent(node.id)}"></code>`,
-        `<code class="agent-command" data-agent-command data-node-id="${escapeAttr(node.id)}" data-agent-token="${escapeAttr(node.agentToken)}" data-listen="${escapeAttr(node.listen || `0.0.0.0:${node.port}`)}" data-target-host="${escapeAttr(node.host)}" data-target-port="${escapeAttr(node.port)}"></code>`,
-        `<div class="row-actions"><a class="button-link small" href="/nodes/${encodeURIComponent(node.id)}/edit">Edit</a>${deleteForm(`/api/node/${encodeURIComponent(node.id)}`)}</div>`,
+        html(`${escapeHtml(node.host)}:${escapeHtml(node.port)}<br><span class="muted">${escapeHtml(node.sni || '')}</span>`),
+        html(`${nodeStatus(node)}${nodeProbeStatus(node)}`),
+        html(nodeTraffic(node)),
+        html(`<a href="/n/${encodeURIComponent(node.id)}/${encodeURIComponent(node.configToken || '')}">config</a>`),
+        html(`<code class="docker-command" data-docker-command data-config-path="/n/${encodeURIComponent(node.id)}/${encodeURIComponent(node.configToken || '')}"></code>`),
+        html(`<code class="agent-command" data-agent-command data-node-id="${escapeAttr(node.id)}" data-agent-token="${escapeAttr(node.agentToken)}" data-listen="${escapeAttr(node.listen || `0.0.0.0:${node.port}`)}" data-target-host="${escapeAttr(node.host)}" data-target-port="${escapeAttr(node.port)}"></code>`),
+        html(`<div class="row-actions"><a class="button-link small" href="/nodes/${encodeURIComponent(node.id)}/edit">Edit</a>${deleteForm(`/api/node/${encodeURIComponent(node.id)}`)}</div>`),
       ]))}
     </section>
   `);
@@ -178,11 +179,11 @@ export function reportPage(nodes) {
     </header>
     <section class="table-wrap report-wrap">
       ${table(['Key', 'Name', 'Host', 'Status', 'Traffic'], nodes.map((node) => [
-        `<span class="report-key">${escapeHtml(node.id)}</span>`,
-        `<strong class="report-name">${escapeHtml(node.name)}</strong>`,
-        `${escapeHtml(node.host)}:${escapeHtml(node.port)}<br><span class="muted">${escapeHtml(node.sni || '')}</span>`,
-        `<div class="report-status">${nodeStatus(node)}${nodeProbeStatus(node)}</div>`,
-        `<div class="report-traffic">${nodeTraffic(node)}</div>`,
+        html(`<span class="report-key">${escapeHtml(node.id)}</span>`),
+        html(`<strong class="report-name">${escapeHtml(node.name)}</strong>`),
+        html(`${escapeHtml(node.host)}:${escapeHtml(node.port)}<br><span class="muted">${escapeHtml(node.sni || '')}</span>`),
+        html(`<div class="report-status">${nodeStatus(node)}${nodeProbeStatus(node)}</div>`),
+        html(`<div class="report-traffic">${nodeTraffic(node)}</div>`),
       ]))}
     </section>
   `);
@@ -217,9 +218,9 @@ export function certificatesPage(certs, editingCert = null, adminAuth = 'admin:A
         cert.issuer,
         cert.notAfter,
         cert.daysRemaining ?? '',
-        `<a href="/c/${encodeURIComponent(cert.id)}/cert">cert</a> <a href="/c/${encodeURIComponent(cert.id)}/key">key</a>`,
-        `<code class="renew-command" data-renew-command data-cert-id="${escapeAttr(cert.id)}" data-domain="${escapeAttr(cert.domain || cert.id)}" data-auth="${escapeAttr(adminAuth)}"></code>`,
-        `<div class="row-actions"><a class="button-link small" href="/certificates/${encodeURIComponent(cert.id)}/edit">Edit</a>${deleteForm(`/api/cert/${encodeURIComponent(cert.id)}`)}</div>`,
+        html(`<a href="/c/${encodeURIComponent(cert.id)}/cert">cert</a> <a href="/c/${encodeURIComponent(cert.id)}/key">key</a>`),
+        html(`<code class="renew-command" data-renew-command data-cert-id="${escapeAttr(cert.id)}" data-domain="${escapeAttr(cert.domain || cert.id)}" data-auth="${escapeAttr(adminAuth)}"></code>`),
+        html(`<div class="row-actions"><a class="button-link small" href="/certificates/${encodeURIComponent(cert.id)}/edit">Edit</a>${deleteForm(`/api/cert/${encodeURIComponent(cert.id)}`)}</div>`),
       ]))}
     </section>
   `);
@@ -242,13 +243,13 @@ export function usersPage(users) {
     <section class="table-wrap">
       ${table(['Name', 'Token', 'Enabled', 'Expire At', 'Traffic Limit', 'Clash', 'v2rayN', ''], users.map((user) => [
         user.name,
-        `<code>${escapeHtml(user.token)}</code>`,
+        html(`<code>${escapeHtml(user.token)}</code>`),
         user.enabled ? 'yes' : 'no',
         user.expireAt || 'never',
-        `${escapeHtml(formatBytes(user.trafficLimit || 0))}<br><span class="muted">not enforced</span>`,
-        `<a href="/sub/clash/${encodeURIComponent(user.token)}">Clash</a>`,
-        `<a href="/sub/v2rayn/${encodeURIComponent(user.token)}">v2rayN</a>`,
-        deleteForm(`/api/user/${encodeURIComponent(user.token)}`),
+        html(`${escapeHtml(formatBytes(user.trafficLimit || 0))}<br><span class="muted">not enforced</span>`),
+        html(`<a href="/sub/clash/${encodeURIComponent(user.token)}">Clash</a>`),
+        html(`<a href="/sub/v2rayn/${encodeURIComponent(user.token)}">v2rayN</a>`),
+        html(deleteForm(`/api/user/${encodeURIComponent(user.token)}`)),
       ]))}
     </section>
   `);
@@ -260,9 +261,9 @@ export function subscriptionsPage(users) {
     <section class="table-wrap">
       ${table(['User', 'Token', 'Clash Meta', 'v2rayN'], users.map((user) => [
         user.name,
-        `<code>${escapeHtml(user.token)}</code>`,
-        `<a href="/sub/clash/${encodeURIComponent(user.token)}">/sub/clash/${escapeHtml(user.token)}</a>`,
-        `<a href="/sub/v2rayn/${encodeURIComponent(user.token)}">/sub/v2rayn/${escapeHtml(user.token)}</a>`,
+        html(`<code>${escapeHtml(user.token)}</code>`),
+        html(`<a href="/sub/clash/${encodeURIComponent(user.token)}">/sub/clash/${escapeHtml(user.token)}</a>`),
+        html(`<a href="/sub/v2rayn/${encodeURIComponent(user.token)}">/sub/v2rayn/${escapeHtml(user.token)}</a>`),
       ]))}
     </section>
   `);
@@ -555,12 +556,21 @@ function formatLatency(value) {
 function table(headers, rows) {
   return `<table>
     <thead><tr>${headers.map((head) => `<th>${escapeHtml(head)}</th>`).join('')}</tr></thead>
-    <tbody>${rows.length ? rows.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${headers.length}" class="empty">No data</td></tr>`}</tbody>
+    <tbody>${rows.length ? rows.map((row) => `<tr>${row.map((cell) => `<td>${tableCell(cell)}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${headers.length}" class="empty">No data</td></tr>`}</tbody>
   </table>`;
 }
 
 function deleteForm(action) {
   return `<form method="post" action="${escapeAttr(action)}"><input type="hidden" name="_method" value="DELETE"><button class="danger" type="submit">Delete</button></form>`;
+}
+
+function html(value) {
+  return { __html: String(value) };
+}
+
+function tableCell(value) {
+  if (value && typeof value === 'object' && Object.hasOwn(value, '__html')) return value.__html;
+  return escapeHtml(value);
 }
 
 function escapeHtml(value) {
