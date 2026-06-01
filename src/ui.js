@@ -1,5 +1,6 @@
-export function layout(title, active, body) {
-  const nav = [
+export function layout(title, active, body, options = {}) {
+  const authenticated = options.authenticated !== false;
+  const nav = authenticated ? [
     ['/', 'Dashboard'],
     ['/report', 'Report'],
     ['/nodes', 'Nodes'],
@@ -7,6 +8,8 @@ export function layout(title, active, body) {
     ['/subscriptions', 'Subscriptions'],
     ['/users', 'Users'],
     ['/settings', 'Settings'],
+  ] : [
+    ['/', 'Dashboard'],
   ];
 
   return `<!doctype html>
@@ -24,9 +27,9 @@ export function layout(title, active, body) {
     <nav>
       ${nav.map(([href, label]) => `<a class="${active === label ? 'active' : ''}" href="${href}">${label}</a>`).join('')}
     </nav>
-    <form method="post" action="/logout" class="logout-form">
+    ${authenticated ? `<form method="post" action="/logout" class="logout-form">
       <button type="submit">Logout</button>
-    </form>
+    </form>` : '<a class="login-link" href="/login">Login</a>'}
   </aside>
   <main class="main">
     ${body}
@@ -61,22 +64,23 @@ export function loginPage(error = '') {
 </html>`;
 }
 
-export function dashboardPage(metrics) {
+export function dashboardPage(metrics, authenticated = true) {
   return layout('Dashboard', 'Dashboard', `
     <header class="topbar">
       <div>
         <p class="eyebrow">Control Plane</p>
         <h1>Dashboard</h1>
       </div>
+      ${authenticated ? '' : '<a class="button-link" href="/login">Login</a>'}
     </header>
     <section class="metrics">
-      ${metric('Total Nodes', metrics.totalNodes, '/nodes')}
-      ${metric('Online Nodes', `${metrics.onlineNodes}/${metrics.totalNodes}`, '/nodes')}
-      ${metric('Reporting Nodes', metrics.reportingNodes, '/nodes')}
-      ${metric('Total Certificates', metrics.totalCertificates, '/certificates')}
-      ${metric('Expiring Certificates', metrics.expiringCertificates, '/certificates')}
-      ${metric('Total Users', metrics.totalUsers, '/users')}
-      ${metric('Active Tokens', metrics.activeSubscriptionTokens, '/subscriptions')}
+      ${metric('Total Nodes', metrics.totalNodes, '/nodes', authenticated)}
+      ${metric('Online Nodes', `${metrics.onlineNodes}/${metrics.totalNodes}`, '/nodes', authenticated)}
+      ${metric('Reporting Nodes', metrics.reportingNodes, '/nodes', authenticated)}
+      ${metric('Total Certificates', metrics.totalCertificates, '/certificates', authenticated)}
+      ${metric('Expiring Certificates', metrics.expiringCertificates, '/certificates', authenticated)}
+      ${metric('Total Users', metrics.totalUsers, '/users', authenticated)}
+      ${metric('Active Tokens', metrics.activeSubscriptionTokens, '/subscriptions', authenticated)}
     </section>
     <section class="dashboard-grid">
       <div class="panel">
@@ -106,7 +110,7 @@ export function dashboardPage(metrics) {
       </div>
       ${latencyNodeChart(metrics.nodeLatency)}
     </section>
-  `);
+  `, { authenticated });
 }
 
 export function nodesPage(nodes, certs, editingNode = null) {
@@ -273,8 +277,11 @@ export function settingsPage(settings) {
   `);
 }
 
-function metric(label, value, href) {
-  return `<a class="metric" href="${escapeAttr(href)}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></a>`;
+function metric(label, value, href, linked = true) {
+  const content = `<span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>`;
+  return linked
+    ? `<a class="metric" href="${escapeAttr(href)}">${content}</a>`
+    : `<div class="metric">${content}</div>`;
 }
 
 function input(name, label, placeholder, required = false, value = '', extra = '') {

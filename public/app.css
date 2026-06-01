@@ -106,6 +106,17 @@ nav a:hover {
   margin-top: 24px;
 }
 
+.login-link {
+  display: block;
+  margin-top: 24px;
+  border-radius: 6px;
+  background: #344254;
+  color: #fff;
+  font-weight: 700;
+  padding: 10px 12px;
+  text-align: center;
+}
+
 .logout-form button {
   width: 100%;
   background: #344254;

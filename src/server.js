@@ -98,9 +98,12 @@ async function route(req, res) {
     return nodeAgentRoute(req, res, segments[2]);
   }
 
+  if (req.method === 'GET' && url.pathname === '/') {
+    return sendHtml(res, dashboardPage(store.metrics(), isAuthenticated(req)));
+  }
+
   if (!requireAuth(req, res, url)) return;
 
-  if (req.method === 'GET' && url.pathname === '/') return sendHtml(res, dashboardPage(store.metrics()));
   if (req.method === 'GET' && url.pathname === '/report') return sendHtml(res, reportPage(store.listNodes()));
   if (req.method === 'GET' && url.pathname === '/nodes') return sendHtml(res, nodesPage(store.listNodes(), store.listCerts()));
   if (req.method === 'GET' && segments[0] === 'nodes' && segments[1] && segments[2] === 'edit') {
@@ -190,13 +193,17 @@ async function nodeAgentRoute(req, res, nodeId) {
 }
 
 function requireAuth(req, res, url) {
-  if (hasValidSession(req) || hasBasicAuth(req)) return true;
+  if (isAuthenticated(req)) return true;
   if (url.pathname.startsWith('/api/')) {
     sendJson(res, 401, { error: 'authentication required' });
     return false;
   }
   redirect(res, '/login');
   return false;
+}
+
+function isAuthenticated(req) {
+  return hasValidSession(req) || hasBasicAuth(req);
 }
 
 function hasBasicAuth(req) {
