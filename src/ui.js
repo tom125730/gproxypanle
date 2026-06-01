@@ -70,6 +70,8 @@ export function dashboardPage(metrics) {
     </header>
     <section class="metrics">
       ${metric('Total Nodes', metrics.totalNodes, '/nodes')}
+      ${metric('Online Nodes', `${metrics.onlineNodes}/${metrics.totalNodes}`, '/nodes')}
+      ${metric('Reporting Nodes', metrics.reportingNodes, '/nodes')}
       ${metric('Total Certificates', metrics.totalCertificates, '/certificates')}
       ${metric('Expiring Certificates', metrics.expiringCertificates, '/certificates')}
       ${metric('Total Users', metrics.totalUsers, '/users')}
@@ -115,14 +117,15 @@ export function nodesPage(nodes, certs, editingNode = null) {
       </form>
     </section>
     <section class="table-wrap">
-      ${table(['Key', 'Name', 'Host', 'Listen', 'SNI', 'Config', 'Docker', ''], nodes.map((node) => [
+      ${table(['Key', 'Name', 'Host', 'Status', 'Traffic', 'Config', 'Docker', 'Agent', ''], nodes.map((node) => [
         node.id,
         node.name,
-        node.host,
-        node.listen || `0.0.0.0:${node.port}`,
-        node.sni,
+        `${escapeHtml(node.host)}:${escapeHtml(node.port)}<br><span class="muted">${escapeHtml(node.sni || '')}</span>`,
+        nodeStatus(node),
+        nodeTraffic(node),
         `<a href="/n/${encodeURIComponent(node.id)}">/n/${escapeHtml(node.id)}</a>`,
         `<code class="docker-command" data-docker-command data-config-path="/n/${encodeURIComponent(node.id)}"></code>`,
+        `<code class="agent-command" data-agent-command data-node-id="${escapeAttr(node.id)}" data-agent-token="${escapeAttr(node.agentToken)}" data-listen="${escapeAttr(node.listen || `0.0.0.0:${node.port}`)}" data-target-host="${escapeAttr(node.host)}" data-target-port="${escapeAttr(node.port)}"></code>`,
         `<div class="row-actions"><a class="button-link small" href="/nodes/${encodeURIComponent(node.id)}/edit">Edit</a>${deleteForm(`/api/node/${encodeURIComponent(node.id)}`)}</div>`,
       ]))}
     </section>
@@ -240,6 +243,51 @@ function certOptionLabel(cert) {
   if (!cert.domain) return cert.id;
   if (cert.domain === cert.id) return cert.domain;
   return `${cert.domain} (${cert.id})`;
+}
+
+function nodeStatus(node) {
+  const agent = node.agent || {};
+  const label = {
+    up: 'UP',
+    down: 'DOWN',
+    stale: 'STALE',
+    waiting: 'WAITING',
+    disabled: 'DISABLED',
+  }[agent.state] || 'WAITING';
+  const latency = agent.latencyMs === null || agent.latencyMs === undefined ? '' : ` ${agent.latencyMs}ms`;
+  const reported = agent.reportedAt ? `${relativeTime(agent.ageSeconds)} ago` : 'never';
+  const error = agent.error ? `<br><span class="muted">${escapeHtml(agent.error)}</span>` : '';
+
+  return `<span class="status status-${escapeAttr(agent.state || 'waiting')}">${label}</span><br><span class="muted">${escapeHtml(reported)}${escapeHtml(latency)}</span>${error}`;
+}
+
+function nodeTraffic(node) {
+  const agent = node.agent || {};
+  const rx = formatBytes(agent.rxBytes || 0);
+  const tx = formatBytes(agent.txBytes || 0);
+  const connections = Number(agent.connections || 0);
+  return `<span>RX ${escapeHtml(rx)}</span><br><span>TX ${escapeHtml(tx)}</span><br><span class="muted">${connections} conns</span>`;
+}
+
+function relativeTime(seconds) {
+  if (seconds === null || seconds === undefined) return 'never';
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
+function formatBytes(value) {
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let number = Number(value || 0);
+  let index = 0;
+  while (number >= 1024 && index < units.length - 1) {
+    number /= 1024;
+    index += 1;
+  }
+  return `${number >= 10 || index === 0 ? number.toFixed(0) : number.toFixed(1)} ${units[index]}`;
 }
 
 function table(headers, rows) {

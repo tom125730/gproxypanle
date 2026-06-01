@@ -170,6 +170,53 @@ git pull
 systemctl restart gproxypanel
 ```
 
+## Node Monitoring Agent
+
+The panel does not proxy traffic, so it cannot read real node traffic by itself.
+For uptime and traffic monitoring, install the lightweight agent on each gproxy
+node VPS.
+
+After creating or editing a node in `/nodes`, copy the generated Agent command
+from the node table and run it on that node VPS as root. It looks like this:
+
+```bash
+curl -fsSL 'https://your-panel.example/static/gproxy-agent.sh' | bash -s -- 'panel=https://your-panel.example&node=hk01&token=...&listen=0.0.0.0:443&host=hk.example.com&port=443'
+```
+
+Node-side dependencies:
+
+```bash
+apt install -y curl python3 iproute2 iptables
+```
+
+The agent creates:
+
+- `/etc/gproxy-agent/env`
+- `/usr/local/bin/gproxy-agent`
+- `gproxy-agent.service`
+
+It reports to:
+
+```bash
+POST /api/node/:id/agent
+```
+
+The agent uses the per-node `agentToken` shown in the install command. It sends:
+
+- node status: `up` or `down`
+- local TCP check latency
+- connection count from `ss`
+- RX/TX byte counters from `iptables`
+- host uptime
+
+Manage the agent on a node VPS:
+
+```bash
+systemctl status gproxy-agent
+journalctl -u gproxy-agent -f
+systemctl restart gproxy-agent
+```
+
 ## Routes
 
 Admin UI:
@@ -193,6 +240,7 @@ Admin API:
 - `GET /api/users`
 - `POST /api/user`
 - `DELETE /api/user/:token`
+- `POST /api/node/:id/agent`
 
 Public distribution:
 

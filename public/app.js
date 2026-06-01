@@ -43,6 +43,18 @@ document.querySelectorAll('[data-renew-command]').forEach((item) => {
   item.textContent = `certbot renew --deploy-hook "curl -fsS -u '${auth}' --data-urlencode 'cert@${certPath}' --data-urlencode 'key@${keyPath}' ${window.location.origin}/api/cert/${certId}"`;
 });
 
+document.querySelectorAll('[data-agent-command]').forEach((item) => {
+  const params = new URLSearchParams({
+    panel: window.location.origin,
+    node: item.dataset.nodeId,
+    token: item.dataset.agentToken,
+    listen: item.dataset.listen,
+    host: item.dataset.targetHost,
+    port: item.dataset.targetPort,
+  });
+  item.textContent = `curl -fsSL '${window.location.origin}/static/gproxy-agent.sh' | bash -s -- '${params.toString()}'`;
+});
+
 function buildNodeYaml(form) {
   const data = new FormData(form);
   const port = data.get('port') || '443';

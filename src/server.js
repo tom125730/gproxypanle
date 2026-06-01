@@ -93,6 +93,10 @@ async function route(req, res) {
     return redirect(res, '/login');
   }
 
+  if (segments[0] === 'api' && segments[1] === 'node' && segments[2] && segments[3] === 'agent') {
+    return nodeAgentRoute(req, res, segments[2]);
+  }
+
   if (!requireAuth(req, res, url)) return;
 
   if (req.method === 'GET' && url.pathname === '/') return sendHtml(res, dashboardPage(store.metrics()));
@@ -168,6 +172,21 @@ async function apiRoute(req, res, segments) {
   return notFound(res);
 }
 
+async function nodeAgentRoute(req, res, nodeId) {
+  if (req.method !== 'POST') return notFound(res);
+
+  const node = store.getNode(nodeId);
+  if (!node) return notFound(res);
+
+  const token = bearerToken(req);
+  if (!token || !safeEqual(token, node.agentToken || '')) {
+    return sendJson(res, 401, { error: 'invalid node agent token' });
+  }
+
+  const agent = await store.recordNodeAgentReport(nodeId, await readBody(req), clientAddress(req));
+  return sendJson(res, 200, { ok: true, agent });
+}
+
 function requireAuth(req, res, url) {
   if (hasValidSession(req) || hasBasicAuth(req)) return true;
   if (url.pathname.startsWith('/api/')) {
@@ -190,6 +209,15 @@ function hasBasicAuth(req) {
   const user = decoded.slice(0, separator);
   const pass = decoded.slice(separator + 1);
   return user === config.adminUser && pass === config.adminPass;
+}
+
+function bearerToken(req) {
+  const header = req.headers.authorization || '';
+  const separator = header.indexOf(' ');
+  if (separator < 0) return '';
+  const scheme = header.slice(0, separator);
+  if (scheme !== 'Bearer') return '';
+  return header.slice(separator + 1);
 }
 
 function hasValidSession(req) {
@@ -222,9 +250,14 @@ function parseCookies(header) {
 }
 
 function safeEqual(left, right) {
-  const a = Buffer.from(left);
-  const b = Buffer.from(right);
+  const a = Buffer.from(String(left));
+  const b = Buffer.from(String(right));
   return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+function clientAddress(req) {
+  const forwardedFor = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return forwardedFor || req.socket.remoteAddress || '';
 }
 
 function adminAuthPair() {

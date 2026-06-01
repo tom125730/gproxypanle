@@ -12,6 +12,7 @@ const emptyDb = {
 };
 
 const defaultNodeSecret = '3c999130';
+const agentStaleMs = 180000;
 
 export class JsonStore {
   constructor(filePath) {
@@ -28,7 +29,9 @@ export class JsonStore {
 
     try {
       const raw = await fs.readFile(this.filePath, 'utf8');
-      this.db = mergeDb(JSON.parse(raw));
+      const { db, changed } = mergeDb(JSON.parse(raw));
+      this.db = db;
+      if (changed) await this.save();
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
       this.db = structuredClone(emptyDb);
@@ -46,11 +49,14 @@ export class JsonStore {
 
   metrics() {
     const now = Date.now();
+    const nodes = Object.values(this.db.nodes).map(withNodeAgentStatus);
     const certs = Object.values(this.db.certs);
     const users = Object.values(this.db.users);
 
     return {
-      totalNodes: Object.keys(this.db.nodes).length,
+      totalNodes: nodes.length,
+      onlineNodes: nodes.filter((node) => node.agent.state === 'up').length,
+      reportingNodes: nodes.filter((node) => node.agent.reportedAt).length,
       totalCertificates: certs.length,
       expiringCertificates: certs.filter((cert) => {
         if (!cert.notAfter) return false;
@@ -63,11 +69,12 @@ export class JsonStore {
   }
 
   listNodes() {
-    return Object.values(this.db.nodes).sort(byId);
+    return Object.values(this.db.nodes).map(withNodeAgentStatus).sort(byId);
   }
 
   getNode(id) {
-    return this.db.nodes[id] || null;
+    const node = this.db.nodes[id];
+    return node ? withNodeAgentStatus(node) : null;
   }
 
   async setNode(id, input) {
@@ -82,6 +89,8 @@ export class JsonStore {
       sni: input.sni || previous.sni || input.host || '',
       password: input.password || previous.password || defaultNodeSecret,
       certId: input.certId || previous.certId || '',
+      agentToken: input.agentToken || previous.agentToken || newAgentToken(),
+      agent: previous.agent || null,
       socks5: toBool(input.socks5, previous.socks5 ?? false),
       relay: toBool(input.relay, previous.relay ?? false),
       wspaths: input.wspaths || previous.wspaths || '/gproxy',
@@ -94,6 +103,38 @@ export class JsonStore {
     this.db.nodes[id] = node;
     await this.save();
     return node;
+  }
+
+  async recordNodeAgentReport(id, input, remoteAddress = '') {
+    const node = this.db.nodes[id];
+    if (!node) return null;
+
+    const now = new Date().toISOString();
+    const previous = node.agent || {};
+    const rxCounter = toNonNegativeNumber(input.rxBytes ?? input.rxCounter);
+    const txCounter = toNonNegativeNumber(input.txBytes ?? input.txCounter);
+    const rxDelta = counterDelta(previous.rxCounter, rxCounter);
+    const txDelta = counterDelta(previous.txCounter, txCounter);
+
+    node.agent = {
+      status: input.status === 'up' ? 'up' : 'down',
+      latencyMs: toNullableNumber(input.latencyMs),
+      error: trimString(input.error, 240),
+      rxBytes: toNonNegativeNumber(previous.rxBytes) + rxDelta,
+      txBytes: toNonNegativeNumber(previous.txBytes) + txDelta,
+      lastRxBytes: rxDelta,
+      lastTxBytes: txDelta,
+      rxCounter,
+      txCounter,
+      connections: toNonNegativeNumber(input.connections),
+      uptimeSeconds: toNonNegativeNumber(input.uptimeSeconds),
+      version: trimString(input.version, 40),
+      remoteAddress: trimString(remoteAddress, 80),
+      reportedAt: now,
+    };
+
+    await this.save();
+    return withNodeAgentStatus(node).agent;
   }
 
   async deleteNode(id) {
@@ -188,18 +229,92 @@ export function isUserActive(user) {
   return new Date(user.expireAt).getTime() > Date.now();
 }
 
-function mergeDb(value) {
+function mergeDb(value = {}) {
+  const nodes = {};
+  let changed = false;
+
+  for (const [key, node] of Object.entries(value.nodes || {})) {
+    const id = node.id || key;
+    const normalized = {
+      ...node,
+      id,
+      agentToken: node.agentToken || newAgentToken(),
+    };
+    if (!node.agentToken || node.id !== id) changed = true;
+    nodes[id] = normalized;
+  }
+
   return {
-    ...structuredClone(emptyDb),
-    ...value,
-    nodes: value.nodes || {},
-    certs: value.certs || {},
-    users: value.users || {},
-    settings: {
-      ...emptyDb.settings,
-      ...(value.settings || {}),
+    db: {
+      ...structuredClone(emptyDb),
+      ...value,
+      nodes,
+      certs: value.certs || {},
+      users: value.users || {},
+      settings: {
+        ...emptyDb.settings,
+        ...(value.settings || {}),
+      },
+    },
+    changed,
+  };
+}
+
+function withNodeAgentStatus(node) {
+  const agent = node.agent || {};
+  const reportedAtMs = agent.reportedAt ? new Date(agent.reportedAt).getTime() : 0;
+  const ageMs = reportedAtMs ? Date.now() - reportedAtMs : null;
+  const stale = !reportedAtMs || ageMs > agentStaleMs;
+  let state = 'waiting';
+
+  if (node.enabled === false) {
+    state = 'disabled';
+  } else if (!reportedAtMs) {
+    state = 'waiting';
+  } else if (stale) {
+    state = 'stale';
+  } else if (agent.status === 'up') {
+    state = 'up';
+  } else {
+    state = 'down';
+  }
+
+  return {
+    ...node,
+    agent: {
+      ...agent,
+      state,
+      stale,
+      ageSeconds: ageMs === null ? null : Math.max(0, Math.round(ageMs / 1000)),
     },
   };
+}
+
+function newAgentToken() {
+  return crypto.randomBytes(24).toString('base64url');
+}
+
+function counterDelta(previous, current) {
+  if (!Number.isFinite(previous)) return current;
+  if (current >= previous) return current - previous;
+  return current;
+}
+
+function toNonNegativeNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return 0;
+  return Math.floor(number);
+}
+
+function toNullableNumber(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return null;
+  return Math.round(number);
+}
+
+function trimString(value, maxLength) {
+  return String(value || '').slice(0, maxLength);
 }
 
 function byId(a, b) {
