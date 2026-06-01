@@ -77,6 +77,28 @@ export function dashboardPage(metrics) {
       ${metric('Total Users', metrics.totalUsers, '/users')}
       ${metric('Active Tokens', metrics.activeSubscriptionTokens, '/subscriptions')}
     </section>
+    <section class="dashboard-grid">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Node Status</h2>
+          <span class="muted">${escapeHtml(metrics.reportingNodes)} reporting</span>
+        </div>
+        ${statusChart(metrics)}
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Traffic</h2>
+          <span class="muted">${escapeHtml(metrics.totalConnections)} conns</span>
+        </div>
+        <div class="traffic-summary">
+          <div><span>RX</span><strong>${escapeHtml(formatBytes(metrics.totalRxBytes))}</strong></div>
+          <div><span>TX</span><strong>${escapeHtml(formatBytes(metrics.totalTxBytes))}</strong></div>
+          <div><span>Total</span><strong>${escapeHtml(formatBytes(metrics.totalTrafficBytes))}</strong></div>
+          <div><span>Avg Latency</span><strong>${escapeHtml(metrics.averageLatencyMs === null ? 'n/a' : `${metrics.averageLatencyMs}ms`)}</strong></div>
+        </div>
+        ${trafficChart(metrics.nodeTraffic)}
+      </div>
+    </section>
   `);
 }
 
@@ -178,16 +200,18 @@ export function usersPage(users) {
         ${input('token', 'Token', 'leave empty to generate')}
         ${input('expireAt', 'Expire At', '2027-01-01T00:00:00Z')}
         ${input('trafficLimit', 'Traffic Limit Bytes', '0')}
+        <p class="form-note wide">Traffic Limit is stored for planning only. Enforcement is not active because traffic is currently reported by node, not by subscription user.</p>
         <label class="check"><input type="checkbox" name="enabled" checked> Enabled</label>
         <button type="submit">Save User</button>
       </form>
     </section>
     <section class="table-wrap">
-      ${table(['Name', 'Token', 'Enabled', 'Expire At', 'Clash', 'v2rayN', ''], users.map((user) => [
+      ${table(['Name', 'Token', 'Enabled', 'Expire At', 'Traffic Limit', 'Clash', 'v2rayN', ''], users.map((user) => [
         user.name,
         `<code>${escapeHtml(user.token)}</code>`,
         user.enabled ? 'yes' : 'no',
         user.expireAt || 'never',
+        `${escapeHtml(formatBytes(user.trafficLimit || 0))}<br><span class="muted">not enforced</span>`,
         `<a href="/sub/clash/${encodeURIComponent(user.token)}">Clash</a>`,
         `<a href="/sub/v2rayn/${encodeURIComponent(user.token)}">v2rayN</a>`,
         deleteForm(`/api/user/${encodeURIComponent(user.token)}`),
@@ -243,6 +267,54 @@ function certOptionLabel(cert) {
   if (!cert.domain) return cert.id;
   if (cert.domain === cert.id) return cert.domain;
   return `${cert.domain} (${cert.id})`;
+}
+
+function statusChart(metrics) {
+  const entries = [
+    ['up', 'UP'],
+    ['down', 'DOWN'],
+    ['stale', 'STALE'],
+    ['waiting', 'WAITING'],
+    ['disabled', 'DISABLED'],
+  ];
+  const total = Math.max(1, Number(metrics.totalNodes || 0));
+  const counts = metrics.statusCounts || {};
+  const segments = entries.map(([key, label]) => {
+    const count = Number(counts[key] || 0);
+    if (!count) return '';
+    const width = Math.max(4, (count / total) * 100);
+    return `<span class="status-segment status-segment-${escapeAttr(key)}" style="width:${escapeAttr(width)}%" title="${escapeAttr(`${label}: ${count}`)}"></span>`;
+  }).join('');
+  const legend = entries.map(([key, label]) => {
+    const count = Number(counts[key] || 0);
+    return `<div class="status-legend-item"><span class="legend-dot legend-dot-${escapeAttr(key)}"></span><span>${escapeHtml(label)}</span><strong>${escapeHtml(count)}</strong></div>`;
+  }).join('');
+
+  return `
+    <div class="status-chart">${segments || '<span class="status-segment status-segment-waiting" style="width:100%"></span>'}</div>
+    <div class="status-legend">${legend}</div>
+  `;
+}
+
+function trafficChart(nodes) {
+  if (!nodes || !nodes.length) {
+    return '<div class="empty mini-empty">No node traffic yet</div>';
+  }
+
+  const max = Math.max(1, ...nodes.map((node) => Number(node.totalBytes || 0)));
+  return `<div class="traffic-bars">
+    ${nodes.map((node) => {
+      const width = Math.max(2, (Number(node.totalBytes || 0) / max) * 100);
+      return `<div class="traffic-row">
+        <div class="traffic-row-head">
+          <span>${escapeHtml(node.name)}</span>
+          <strong>${escapeHtml(formatBytes(node.totalBytes))}</strong>
+        </div>
+        <div class="bar-track"><span class="bar-fill status-fill-${escapeAttr(node.state || 'waiting')}" style="width:${escapeAttr(width)}%"></span></div>
+        <div class="traffic-row-sub">RX ${escapeHtml(formatBytes(node.rxBytes))} / TX ${escapeHtml(formatBytes(node.txBytes))}${node.latencyMs === null ? '' : ` / ${escapeHtml(node.latencyMs)}ms`}</div>
+      </div>`;
+    }).join('')}
+  </div>`;
 }
 
 function nodeStatus(node) {

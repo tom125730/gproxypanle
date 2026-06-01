@@ -209,6 +209,10 @@ The agent uses the per-node `agentToken` shown in the install command. It sends:
 - RX/TX byte counters from `iptables`
 - host uptime
 
+Traffic is currently node-level traffic. The `trafficLimit` field on users is
+stored for planning and display only; it is not enforced yet because gproxy does
+not expose per-subscription-user traffic data to the panel.
+
 Manage the agent on a node VPS:
 
 ```bash

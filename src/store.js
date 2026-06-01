@@ -52,11 +52,58 @@ export class JsonStore {
     const nodes = Object.values(this.db.nodes).map(withNodeAgentStatus);
     const certs = Object.values(this.db.certs);
     const users = Object.values(this.db.users);
+    const statusCounts = {
+      up: 0,
+      down: 0,
+      stale: 0,
+      waiting: 0,
+      disabled: 0,
+    };
+
+    let totalRxBytes = 0;
+    let totalTxBytes = 0;
+    let totalConnections = 0;
+    let latencySum = 0;
+    let latencyCount = 0;
+
+    const nodeTraffic = nodes.map((node) => {
+      const agent = node.agent || {};
+      const rxBytes = toNonNegativeNumber(agent.rxBytes);
+      const txBytes = toNonNegativeNumber(agent.txBytes);
+      const totalBytes = rxBytes + txBytes;
+
+      statusCounts[agent.state] = (statusCounts[agent.state] || 0) + 1;
+      totalRxBytes += rxBytes;
+      totalTxBytes += txBytes;
+      totalConnections += toNonNegativeNumber(agent.connections);
+
+      if (Number.isFinite(agent.latencyMs)) {
+        latencySum += agent.latencyMs;
+        latencyCount += 1;
+      }
+
+      return {
+        id: node.id,
+        name: node.name || node.id,
+        state: agent.state,
+        rxBytes,
+        txBytes,
+        totalBytes,
+        latencyMs: agent.latencyMs ?? null,
+      };
+    }).sort((a, b) => b.totalBytes - a.totalBytes).slice(0, 8);
 
     return {
       totalNodes: nodes.length,
-      onlineNodes: nodes.filter((node) => node.agent.state === 'up').length,
+      onlineNodes: statusCounts.up,
       reportingNodes: nodes.filter((node) => node.agent.reportedAt).length,
+      statusCounts,
+      totalRxBytes,
+      totalTxBytes,
+      totalTrafficBytes: totalRxBytes + totalTxBytes,
+      totalConnections,
+      averageLatencyMs: latencyCount ? Math.round(latencySum / latencyCount) : null,
+      nodeTraffic,
       totalCertificates: certs.length,
       expiringCertificates: certs.filter((cert) => {
         if (!cert.notAfter) return false;
