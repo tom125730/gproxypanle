@@ -223,7 +223,7 @@ print(json.dumps({
     "txBytes": int(tx),
     "uptimeSeconds": int(uptime),
     "probes": probe_value,
-    "version": "shell-3",
+    "version": "shell-4",
 }))
 PY
 }
@@ -315,7 +315,14 @@ run_deploy_docker() {
   fi
 
   set +e
-  output="$(docker rm -f gproxy 2>&1; docker run --network=host --name=gproxy --restart=always -d gproxylabs/gproxy -w -c "$config_url" 2>&1)"
+  output="$(
+    echo "+ docker pull gproxylabs/gproxy"
+    docker pull gproxylabs/gproxy 2>&1
+    echo "+ docker rm -f gproxy"
+    docker rm -f gproxy 2>&1
+    echo "+ docker run --network=host --name=gproxy --restart=always -d gproxylabs/gproxy -w -c ${config_url}"
+    docker run --network=host --name=gproxy --restart=always -d gproxylabs/gproxy -w -c "$config_url" 2>&1
+  )"
   exit_code=$?
   set -e
 

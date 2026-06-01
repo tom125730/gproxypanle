@@ -579,7 +579,8 @@ function deployStatus(command) {
   }[status] || status;
   const detail = command.finishedAt || command.createdAt || '';
   const error = command.error ? `<br><span class="muted">${escapeHtml(command.error)}</span>` : '';
-  return `<div class="deploy-status"><span class="status status-${status === 'succeeded' ? 'up' : status === 'failed' ? 'down' : 'waiting'}">${escapeHtml(label.toUpperCase())}</span><br><span class="muted">${escapeHtml(detail)}</span>${error}</div>`;
+  const output = command.output ? `<pre class="deploy-output">${escapeHtml(command.output)}</pre>` : '';
+  return `<div class="deploy-status"><span class="status status-${status === 'succeeded' ? 'up' : status === 'failed' ? 'down' : 'waiting'}">${escapeHtml(label.toUpperCase())}</span><br><span class="muted">${escapeHtml(detail)}</span>${error}${output}</div>`;
 }
 
 function html(value) {
