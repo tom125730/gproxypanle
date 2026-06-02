@@ -96,14 +96,11 @@ export function dashboardPage(metrics, authenticated = true) {
       <div class="panel">
         <div class="panel-head">
           <h2>Traffic</h2>
-          <span class="muted">${escapeHtml(metrics.totalConnections)} conns</span>
+          <span class="muted" data-traffic-connections>${escapeHtml(metrics.totalConnections)} conns</span>
         </div>
-        <div class="traffic-summary">
-          <div><span>RX</span><strong>${escapeHtml(formatBytes(metrics.totalRxBytes))}</strong></div>
-          <div><span>TX</span><strong>${escapeHtml(formatBytes(metrics.totalTxBytes))}</strong></div>
-          <div><span>Total</span><strong>${escapeHtml(formatBytes(metrics.totalTrafficBytes))}</strong></div>
+        <div data-traffic-live>
+          ${trafficPanelBody(metrics)}
         </div>
-        ${trafficChart(metrics.nodeTraffic)}
       </div>
     </section>
     <section class="panel">
@@ -114,6 +111,17 @@ export function dashboardPage(metrics, authenticated = true) {
       ${latencyNodeChart(metrics.nodeLatency)}
     </section>
   `, { authenticated });
+}
+
+export function trafficPanelBody(metrics) {
+  return `
+    <div class="traffic-summary">
+      <div><span>RX</span><strong>${escapeHtml(formatBytes(metrics.totalRxBytes))}</strong></div>
+      <div><span>TX</span><strong>${escapeHtml(formatBytes(metrics.totalTxBytes))}</strong></div>
+      <div><span>Total</span><strong>${escapeHtml(formatBytes(metrics.totalTrafficBytes))}</strong></div>
+    </div>
+    ${trafficChart(metrics.nodeTraffic)}
+  `;
 }
 
 export function nodesPage(nodes, certs, editingNode = null) {

@@ -1,4 +1,10 @@
 const nodeForm = document.querySelector('[data-node-form]');
+const trafficLive = document.querySelector('[data-traffic-live]');
+const trafficConnections = document.querySelector('[data-traffic-connections]');
+
+if (trafficLive) {
+  startTrafficRefresh(trafficLive, trafficConnections);
+}
 
 if (nodeForm) {
   const yamlOutput = nodeForm.querySelector('[data-yaml-output]');
@@ -67,6 +73,45 @@ document.querySelectorAll('[data-command]').forEach((item) => {
     }, 1300);
   });
 });
+
+function startTrafficRefresh(container, connectionsLabel) {
+  let refreshing = false;
+  let stopped = document.hidden;
+
+  const refresh = async () => {
+    if (refreshing || stopped) return;
+    refreshing = true;
+    try {
+      const response = await fetch('/api/metrics/traffic', {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+      });
+      if (!response.ok) return;
+
+      const payload = await response.json();
+      if (typeof payload.html === 'string') {
+        container.innerHTML = payload.html;
+      }
+      if (connectionsLabel && Number.isFinite(Number(payload.totalConnections))) {
+        connectionsLabel.textContent = `${payload.totalConnections} conns`;
+      }
+    } catch {
+      // Keep the last good values visible when a refresh fails.
+    } finally {
+      refreshing = false;
+    }
+  };
+
+  const timer = window.setInterval(refresh, 5000);
+
+  document.addEventListener('visibilitychange', () => {
+    stopped = document.hidden;
+    if (!stopped) refresh();
+  });
+
+  window.addEventListener('beforeunload', () => window.clearInterval(timer));
+  refresh();
+}
 
 function buildNodeYaml(form) {
   const data = new FormData(form);

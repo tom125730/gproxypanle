@@ -13,6 +13,7 @@ import {
   reportPage,
   settingsPage,
   subscriptionsPage,
+  trafficPanelBody,
   usersPage,
 } from './ui.js';
 
@@ -125,6 +126,10 @@ async function route(req, res) {
     return sendHtml(res, dashboardPage(store.metrics(), isAuthenticated(req, url)));
   }
 
+  if (req.method === 'GET' && segments[0] === 'api' && segments[1] === 'metrics' && segments[2] === 'traffic') {
+    return trafficMetricsRoute(res);
+  }
+
   if (!requireAuth(req, res, url)) return;
 
   if (req.method === 'GET' && url.pathname === '/report') return sendHtml(res, reportPage(store.listNodes()));
@@ -157,6 +162,10 @@ async function route(req, res) {
 
 async function apiRoute(req, res, segments) {
   const method = await effectiveMethod(req);
+
+  if (method === 'GET' && segments[0] === 'metrics' && segments[1] === 'traffic') {
+    return trafficMetricsRoute(res);
+  }
 
   if (method === 'GET' && segments[0] === 'nodes') return sendJson(res, 200, store.listNodes());
   if (method === 'GET' && segments[0] === 'node' && segments[1]) {
@@ -219,6 +228,14 @@ async function apiRoute(req, res, segments) {
   }
 
   return notFound(res);
+}
+
+function trafficMetricsRoute(res) {
+  const metrics = store.metrics();
+  return sendJson(res, 200, {
+    totalConnections: metrics.totalConnections,
+    html: trafficPanelBody(metrics),
+  });
 }
 
 async function nodeAgentRoute(req, res, nodeId) {
