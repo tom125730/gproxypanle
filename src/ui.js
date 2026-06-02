@@ -409,17 +409,29 @@ function trafficChart(nodes) {
     return '<div class="empty mini-empty">No node traffic yet</div>';
   }
 
-  const max = Math.max(1, ...nodes.map((node) => Number(node.totalBytes || 0)));
+  const trafficNodes = nodes.map((node) => {
+    const rxBytes = safeBytes(node.rxBytes);
+    const txBytes = safeBytes(node.txBytes);
+    const rxBps = safeBytes(node.rxBps);
+    const txBps = safeBytes(node.txBps);
+    const totalBytes = finiteBytes(node.totalBytes) ?? rxBytes + txBytes;
+    return { ...node, rxBytes, txBytes, rxBps, txBps, totalBytes };
+  });
+  const max = Math.max(0, ...trafficNodes.map((node) => node.totalBytes));
   return `<div class="traffic-bars">
-    ${nodes.map((node) => {
-      const width = Math.max(2, (Number(node.totalBytes || 0) / max) * 100);
+    ${trafficNodes.map((node) => {
+      const width = max > 0 ? Math.min(100, Math.max(0, (node.totalBytes / max) * 100)) : 0;
+      const hasTraffic = node.totalBytes > 0 ? ' has-traffic' : '';
       return `<div class="traffic-row">
         <div class="traffic-row-head">
           <span>${escapeHtml(node.name)}</span>
           <strong>${escapeHtml(formatBytes(node.totalBytes))}</strong>
         </div>
-        <div class="bar-track"><span class="bar-fill status-fill-${escapeAttr(node.state || 'waiting')}" style="width:${escapeAttr(width)}%"></span></div>
-        <div class="traffic-row-sub">RX ${escapeHtml(formatBytes(node.rxBytes))} / TX ${escapeHtml(formatBytes(node.txBytes))}${node.latencyMs === null ? '' : ` / ${escapeHtml(node.latencyMs)}ms`}</div>
+        <div class="bar-track"><span class="bar-fill${hasTraffic} status-fill-${escapeAttr(node.state || 'waiting')}" style="width:${escapeAttr(formatPercent(width))}%"></span></div>
+        <div class="traffic-row-sub">
+          <span>Speed RX ${escapeHtml(formatRate(node.rxBps))} / TX ${escapeHtml(formatRate(node.txBps))}</span>
+          <span>Total RX ${escapeHtml(formatBytes(node.rxBytes))} / TX ${escapeHtml(formatBytes(node.txBytes))}${node.latencyMs === null ? '' : ` / ${escapeHtml(node.latencyMs)}ms`}</span>
+        </div>
       </div>`;
     }).join('')}
   </div>`;
@@ -539,13 +551,33 @@ function relativeTime(seconds) {
 
 function formatBytes(value) {
   const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
-  let number = Number(value || 0);
+  let number = safeBytes(value);
   let index = 0;
   while (number >= 1024 && index < units.length - 1) {
     number /= 1024;
     index += 1;
   }
   return `${number >= 10 || index === 0 ? number.toFixed(0) : number.toFixed(1)} ${units[index]}`;
+}
+
+function formatRate(value) {
+  return `${formatBytes(value)}/s`;
+}
+
+function finiteBytes(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return null;
+  return Math.floor(number);
+}
+
+function safeBytes(value) {
+  return finiteBytes(value) ?? 0;
+}
+
+function formatPercent(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '0';
+  return String(Math.round(number * 1000) / 1000);
 }
 
 function formatLatency(value) {

@@ -296,6 +296,11 @@ h2 {
   font-size: 12px;
 }
 
+.traffic-row-sub {
+  display: grid;
+  gap: 3px;
+}
+
 .traffic-summary strong {
   display: block;
   margin-top: 4px;
@@ -330,6 +335,10 @@ h2 {
   display: block;
   height: 100%;
   border-radius: inherit;
+}
+
+.bar-fill.has-traffic {
+  min-width: 3px;
 }
 
 .mini-empty {

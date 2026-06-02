@@ -78,6 +78,8 @@ export class JsonStore {
       const agent = node.agent || {};
       const rxBytes = toNonNegativeNumber(agent.rxBytes);
       const txBytes = toNonNegativeNumber(agent.txBytes);
+      const rxBps = toNonNegativeNumber(agent.rxBps);
+      const txBps = toNonNegativeNumber(agent.txBps);
       const totalBytes = rxBytes + txBytes;
 
       statusCounts[agent.state] = (statusCounts[agent.state] || 0) + 1;
@@ -92,6 +94,8 @@ export class JsonStore {
         state: agent.state,
         rxBytes,
         txBytes,
+        rxBps,
+        txBps,
         totalBytes,
         latencyMs: agent.latencyMs ?? null,
         probes: agent.probes || {},
@@ -169,6 +173,9 @@ export class JsonStore {
     const txCounter = toNonNegativeNumber(input.txBytes ?? input.txCounter);
     const rxDelta = counterDelta(previous.rxCounter, rxCounter);
     const txDelta = counterDelta(previous.txCounter, txCounter);
+    const intervalSeconds = reportIntervalSeconds(previous.reportedAt, now);
+    const rxBps = intervalSeconds > 0 ? Math.floor(rxDelta / intervalSeconds) : 0;
+    const txBps = intervalSeconds > 0 ? Math.floor(txDelta / intervalSeconds) : 0;
 
     node.agent = {
       status: input.status === 'up' ? 'up' : 'down',
@@ -178,6 +185,9 @@ export class JsonStore {
       txBytes: toNonNegativeNumber(previous.txBytes) + txDelta,
       lastRxBytes: rxDelta,
       lastTxBytes: txDelta,
+      rxBps,
+      txBps,
+      reportIntervalSeconds: intervalSeconds,
       rxCounter,
       txCounter,
       connections: toNonNegativeNumber(input.connections),
@@ -398,6 +408,14 @@ function counterDelta(previous, current) {
   if (!Number.isFinite(previous)) return current;
   if (current >= previous) return current - previous;
   return current;
+}
+
+function reportIntervalSeconds(previousReportedAt, currentReportedAt) {
+  if (!previousReportedAt) return 0;
+  const previousMs = new Date(previousReportedAt).getTime();
+  const currentMs = new Date(currentReportedAt).getTime();
+  if (!Number.isFinite(previousMs) || !Number.isFinite(currentMs) || currentMs <= previousMs) return 0;
+  return Math.max(1, Math.round((currentMs - previousMs) / 1000));
 }
 
 function toNonNegativeNumber(value) {
