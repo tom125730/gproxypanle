@@ -253,12 +253,12 @@ export class JsonStore {
     };
 
     const node = findNodeByCloudKey(this.db.nodes, report.nodeKey);
-    if (node) {
-      const result = applyCloudTrafficToNode(node, report);
-      report.nodeId = node.id;
-      report.acceptedEntryCount = result.acceptedEntryCount;
-      report.duplicateEntryCount = result.duplicateEntryCount;
-    }
+    if (!node) return report;
+
+    const result = applyCloudTrafficToNode(node, report);
+    report.nodeId = node.id;
+    report.acceptedEntryCount = result.acceptedEntryCount;
+    report.duplicateEntryCount = result.duplicateEntryCount;
 
     const previous = Array.isArray(this.db.cloudTrafficReports) ? this.db.cloudTrafficReports : [];
     this.db.cloudTrafficReports = [report, ...previous].slice(0, maxCloudTrafficReports);
@@ -270,6 +270,12 @@ export class JsonStore {
 
   async clearCloudTrafficReports() {
     this.db.cloudTrafficReports = [];
+    await this.save();
+  }
+
+  async pruneUnknownCloudTrafficReports() {
+    const reports = Array.isArray(this.db.cloudTrafficReports) ? this.db.cloudTrafficReports : [];
+    this.db.cloudTrafficReports = reports.filter((report) => report.nodeId);
     await this.save();
   }
 

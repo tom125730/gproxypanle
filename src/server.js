@@ -36,6 +36,7 @@ const loginAttempts = new Map();
 
 const store = new JsonStore(config.dataFile);
 await store.load();
+await store.pruneUnknownCloudTrafficReports();
 if (config.publicBaseUrl && !store.settings().publicBaseUrl) {
   await store.updateSettings({ publicBaseUrl: config.publicBaseUrl });
 }
