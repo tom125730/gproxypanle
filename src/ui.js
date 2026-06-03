@@ -634,12 +634,16 @@ function trafficTokenTable(trend) {
   const secrets = trend?.secrets || [];
   if (!secrets.length) return '';
   return `<div class="traffic-token-grid">
-    ${secrets.map((item) => `<div class="traffic-token">
-      <span>${escapeHtml(item.secret)}</span>
+    ${secrets.map((item, index) => `<div class="traffic-token">
+      <span>${escapeHtml(tokenLabel(index))}</span>
       <strong>${escapeHtml(formatBytes(item.rxBytes + item.txBytes))}</strong>
       <small>RX ${escapeHtml(formatBytes(item.rxBytes))} / TX ${escapeHtml(formatBytes(item.txBytes))} / ${escapeHtml(item.requestCount)} requests</small>
     </div>`).join('')}
   </div>`;
+}
+
+function tokenLabel(index) {
+  return `Token ${index + 1}`;
 }
 
 function latencyNodeChart(nodes) {
