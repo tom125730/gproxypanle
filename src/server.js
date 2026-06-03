@@ -283,13 +283,15 @@ async function cloudTrafficRoute(req, res, url) {
     return sendJson(res, 400, { code: 400, message: 'traffic body must be an array', data: null });
   }
 
-  await store.recordCloudTrafficReport({
+  store.recordCloudTrafficReport({
     method: req.method,
     path: url.pathname,
     nodeKey: req.headers['x-node-key'] || '',
     remoteAddress: clientAddress(req),
     headers: req.headers,
     entries: input,
+  }).catch((error) => {
+    console.error('failed to record cloud traffic report', error);
   });
 
   return sendJson(res, 200, { code: 0, message: 'ok', data: null });
