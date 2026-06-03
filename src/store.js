@@ -35,6 +35,7 @@ export class JsonStore {
     this.db = structuredClone(emptyDb);
     this.loaded = false;
     this.writeQueue = Promise.resolve();
+    this.pendingSave = null;
   }
 
   async load() {
@@ -57,8 +58,38 @@ export class JsonStore {
   }
 
   async save() {
-    const payload = JSON.stringify(this.db, null, 2);
-    this.writeQueue = this.writeQueue.then(() => fs.writeFile(this.filePath, payload));
+    if (this.pendingSave) {
+      const pending = this.pendingSave;
+      clearTimeout(pending.timer);
+      this.pendingSave = null;
+      const write = this.writeNow();
+      write.then(pending.resolve, pending.reject);
+      return write;
+    }
+    return this.writeNow();
+  }
+
+  saveSoon(delayMs = 750) {
+    if (this.pendingSave) return this.pendingSave.promise;
+
+    const pending = {};
+    pending.promise = new Promise((resolve, reject) => {
+      pending.resolve = resolve;
+      pending.reject = reject;
+    });
+    pending.timer = setTimeout(() => {
+      this.pendingSave = null;
+      this.writeNow().then(pending.resolve, pending.reject);
+    }, delayMs);
+    this.pendingSave = pending;
+    return pending.promise;
+  }
+
+  async writeNow() {
+    this.writeQueue = this.writeQueue.then(() => {
+      const payload = JSON.stringify(this.db);
+      return fs.writeFile(this.filePath, payload);
+    });
     await this.writeQueue;
   }
 
@@ -192,7 +223,9 @@ export class JsonStore {
     };
     node.latencyHistory = appendLatencySample(node.latencyHistory, node.agent, now);
 
-    await this.save();
+    this.saveSoon().catch((error) => {
+      console.error('failed to save node agent report', error);
+    });
     return withNodeStatus(node);
   }
 
@@ -229,7 +262,9 @@ export class JsonStore {
 
     const previous = Array.isArray(this.db.cloudTrafficReports) ? this.db.cloudTrafficReports : [];
     this.db.cloudTrafficReports = [report, ...previous].slice(0, maxCloudTrafficReports);
-    await this.save();
+    this.saveSoon().catch((error) => {
+      console.error('failed to save cloud traffic report', error);
+    });
     return report;
   }
 
