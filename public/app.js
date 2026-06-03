@@ -157,6 +157,10 @@ function renderTrafficChart(chart, dataset) {
   const svg = chart.querySelector('[data-traffic-svg]');
   const tooltip = chart.querySelector('[data-traffic-tooltip]');
   if (!svg || !points.length) return;
+  if (tooltip) {
+    tooltip.hidden = true;
+    tooltip.innerHTML = '';
+  }
 
   const pad = { left: 54, right: 54, top: 28, bottom: 46 };
   const width = 960;

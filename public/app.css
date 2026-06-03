@@ -456,6 +456,10 @@ h2 {
   box-shadow: 0 12px 28px rgb(24 32 42 / 18%);
 }
 
+.traffic-tooltip[hidden] {
+  display: none;
+}
+
 .traffic-tooltip strong {
   font-size: 13px;
 }
