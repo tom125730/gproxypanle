@@ -121,7 +121,8 @@ export function trafficPanelBody(metrics) {
       <div><span>TX</span><strong>${escapeHtml(formatBytes(metrics.totalTxBytes))}</strong></div>
       <div><span>Total</span><strong>${escapeHtml(formatBytes(metrics.totalTrafficBytes))}</strong></div>
     </div>
-    ${trafficChart(metrics.nodeTraffic)}
+    ${trafficTrendChart(metrics.cloudTrafficTrend)}
+    ${trafficTokenTable(metrics.cloudTrafficTrend)}
   `;
 }
 
@@ -137,6 +138,9 @@ export function nodesPage(nodes, certs, editingNode = null) {
         ${input('id', 'Node Key', 'hk01', true, node.id || '', isEditing ? 'readonly' : '')}
         <input type="hidden" name="configToken" value="${escapeAttr(node.configToken || '')}">
         <input type="hidden" name="cloudToken" value="${escapeAttr(node.cloudToken || '')}">
+        <label>Cloud NodeKey
+          <input value="${escapeAttr(node.cloudToken || 'auto-generated after save')}" readonly>
+        </label>
         ${input('name', 'Name', 'Hong Kong 01', false, node.name || '')}
         ${input('host', 'Host', 'hk.example.com', false, node.host || '')}
         ${input('port', 'Port', '443', false, node.port || '443')}
@@ -533,6 +537,90 @@ function trafficChart(nodes) {
   </div>`;
 }
 
+function trafficTrendChart(trend) {
+  const points = trend?.points || [];
+  if (!points.length) return '<div class="empty mini-empty">No cloud traffic yet</div>';
+
+  const width = 960;
+  const height = 260;
+  const pad = { left: 54, right: 54, top: 28, bottom: 46 };
+  const chartWidth = width - pad.left - pad.right;
+  const chartHeight = height - pad.top - pad.bottom;
+  const maxBytes = Math.max(1, ...points.map((point) => point.rxBytes + point.txBytes));
+  const maxRequests = Math.max(1, ...points.map((point) => point.requestCount));
+  const xAt = (index) => pad.left + (points.length === 1 ? chartWidth : (index / (points.length - 1)) * chartWidth);
+  const bytesY = (value) => pad.top + chartHeight - (value / maxBytes) * chartHeight;
+  const requestY = (value) => pad.top + chartHeight - (value / maxRequests) * chartHeight;
+  const rxPath = linePath(points.map((point, index) => [xAt(index), bytesY(point.rxBytes)]));
+  const txPath = linePath(points.map((point, index) => [xAt(index), bytesY(point.txBytes)]));
+  const totalPath = linePath(points.map((point, index) => [xAt(index), bytesY(point.rxBytes + point.txBytes)]));
+  const requestPath = linePath(points.map((point, index) => [xAt(index), requestY(point.requestCount)]));
+  const rxArea = areaPath(points.map((point, index) => [xAt(index), bytesY(point.rxBytes)]), pad.top + chartHeight);
+  const totalArea = areaPath(points.map((point, index) => [xAt(index), bytesY(point.rxBytes + point.txBytes)]), pad.top + chartHeight);
+  const xLabels = trafficXAxis(points);
+  const yLabels = [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({
+    y: pad.top + chartHeight - ratio * chartHeight,
+    label: formatBytes(maxBytes * ratio),
+  }));
+
+  return `<div class="traffic-trend">
+    <div class="traffic-trend-head">
+      <strong>Token Traffic Trend</strong>
+      <div class="traffic-legend">
+        ${legendDot('RX', 'traffic-rx')}
+        ${legendDot('TX', 'traffic-tx')}
+        ${legendDot('Total', 'traffic-total')}
+        ${legendDot('Requests', 'traffic-requests')}
+      </div>
+    </div>
+    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Cloud traffic trend">
+      <defs>
+        <linearGradient id="traffic-total-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.24"></stop>
+          <stop offset="100%" stop-color="#06b6d4" stop-opacity="0.03"></stop>
+        </linearGradient>
+        <linearGradient id="traffic-rx-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#2563eb" stop-opacity="0.18"></stop>
+          <stop offset="100%" stop-color="#2563eb" stop-opacity="0.02"></stop>
+        </linearGradient>
+      </defs>
+      ${[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+        const y = pad.top + chartHeight * ratio;
+        return `<line class="chart-grid" x1="${pad.left}" y1="${formatNumber(y)}" x2="${pad.left + chartWidth}" y2="${formatNumber(y)}"></line>`;
+      }).join('')}
+      ${[0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1].map((ratio) => {
+        const x = pad.left + chartWidth * ratio;
+        return `<line class="chart-grid vertical" x1="${formatNumber(x)}" y1="${pad.top}" x2="${formatNumber(x)}" y2="${pad.top + chartHeight}"></line>`;
+      }).join('')}
+      ${yLabels.map((item) => `<text class="chart-axis" x="${pad.left - 8}" y="${formatNumber(item.y + 4)}" text-anchor="end">${escapeHtml(item.label)}</text>`).join('')}
+      ${xLabels.map((item) => `<text class="chart-axis x-axis" x="${formatNumber(item.x)}" y="${height - 16}" text-anchor="middle">${escapeHtml(item.label)}</text>`).join('')}
+      <path class="traffic-area traffic-total-area" d="${escapeAttr(totalArea)}"></path>
+      <path class="traffic-area traffic-rx-area" d="${escapeAttr(rxArea)}"></path>
+      <path class="traffic-line traffic-total-line" d="${escapeAttr(totalPath)}"></path>
+      <path class="traffic-line traffic-rx-line" d="${escapeAttr(rxPath)}"></path>
+      <path class="traffic-line traffic-tx-line" d="${escapeAttr(txPath)}"></path>
+      <path class="traffic-line traffic-request-line" d="${escapeAttr(requestPath)}"></path>
+      ${points.map((point, index) => {
+        const x = xAt(index);
+        const totalY = bytesY(point.rxBytes + point.txBytes);
+        return `<circle class="traffic-point" cx="${formatNumber(x)}" cy="${formatNumber(totalY)}" r="2.5"><title>${escapeHtml(`${formatTrafficTimestamp(point.timestamp)} total ${formatBytes(point.rxBytes + point.txBytes)} requests ${point.requestCount}`)}</title></circle>`;
+      }).join('')}
+    </svg>
+  </div>`;
+}
+
+function trafficTokenTable(trend) {
+  const secrets = trend?.secrets || [];
+  if (!secrets.length) return '';
+  return `<div class="traffic-token-grid">
+    ${secrets.map((item) => `<div class="traffic-token">
+      <span>${escapeHtml(item.secret)}</span>
+      <strong>${escapeHtml(formatBytes(item.rxBytes + item.txBytes))}</strong>
+      <small>RX ${escapeHtml(formatBytes(item.rxBytes))} / TX ${escapeHtml(formatBytes(item.txBytes))} / ${escapeHtml(item.requestCount)} requests</small>
+    </div>`).join('')}
+  </div>`;
+}
+
 function latencyNodeChart(nodes) {
   if (!nodes || !nodes.length) {
     return '<div class="empty mini-empty">No latency data yet</div>';
@@ -684,8 +772,50 @@ function formatPercent(value) {
   return String(Math.round(number * 1000) / 1000);
 }
 
+function formatNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '0';
+  return String(Math.round(number * 100) / 100);
+}
+
 function formatLatency(value) {
   return value === null || value === undefined ? 'n/a' : `${value}ms`;
+}
+
+function linePath(points) {
+  return points.map(([x, y], index) => `${index === 0 ? 'M' : 'L'} ${formatNumber(x)} ${formatNumber(y)}`).join(' ');
+}
+
+function areaPath(points, baseline) {
+  if (!points.length) return '';
+  const first = points[0];
+  const last = points[points.length - 1];
+  return `${linePath(points)} L ${formatNumber(last[0])} ${formatNumber(baseline)} L ${formatNumber(first[0])} ${formatNumber(baseline)} Z`;
+}
+
+function trafficXAxis(points) {
+  const count = Math.min(7, points.length);
+  if (!count) return [];
+  const width = 852;
+  const left = 54;
+  return Array.from({ length: count }, (_, index) => {
+    const pointIndex = count === 1 ? 0 : Math.round((index / (count - 1)) * (points.length - 1));
+    const point = points[pointIndex];
+    return {
+      x: left + (points.length === 1 ? 0 : (pointIndex / (points.length - 1)) * width),
+      label: shortTime(point.timestamp),
+    };
+  });
+}
+
+function shortTime(timestamp) {
+  const date = new Date(Number(timestamp));
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(5, 16).replace('T', ' ');
+}
+
+function legendDot(label, className) {
+  return `<span><i class="${escapeAttr(className)}"></i>${escapeHtml(label)}</span>`;
 }
 
 function table(headers, rows) {

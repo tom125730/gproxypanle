@@ -312,6 +312,149 @@ h2 {
   gap: 12px;
 }
 
+.traffic-trend {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.traffic-trend-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.traffic-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.traffic-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.traffic-legend i {
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  display: inline-block;
+  border: 2px solid currentColor;
+}
+
+.traffic-trend svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.chart-grid {
+  stroke: #dfe5ef;
+  stroke-width: 1;
+}
+
+.chart-grid.vertical {
+  stroke: #edf1f6;
+}
+
+.chart-axis {
+  fill: #637083;
+  font-size: 11px;
+}
+
+.x-axis {
+  font-size: 10px;
+}
+
+.traffic-area {
+  stroke: none;
+}
+
+.traffic-total-area {
+  fill: url(#traffic-total-fill);
+}
+
+.traffic-rx-area {
+  fill: url(#traffic-rx-fill);
+}
+
+.traffic-line {
+  fill: none;
+  stroke-width: 3;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.traffic-rx,
+.traffic-rx-line {
+  color: #2563eb;
+  stroke: #2563eb;
+}
+
+.traffic-tx,
+.traffic-tx-line {
+  color: #e11d48;
+  stroke: #e11d48;
+  stroke-dasharray: 7 5;
+}
+
+.traffic-total,
+.traffic-total-line {
+  color: #06b6d4;
+  stroke: #06b6d4;
+}
+
+.traffic-requests,
+.traffic-request-line {
+  color: #8b5cf6;
+  stroke: #8b5cf6;
+  stroke-dasharray: 4 6;
+}
+
+.traffic-point {
+  fill: #06b6d4;
+  stroke: #fff;
+  stroke-width: 1.5;
+}
+
+.traffic-token-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.traffic-token {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 5px;
+  background: #fbfcfe;
+}
+
+.traffic-token span {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.traffic-token strong {
+  font-size: 18px;
+}
+
+.traffic-token small {
+  color: var(--muted);
+}
+
 .traffic-row {
   display: grid;
   gap: 6px;

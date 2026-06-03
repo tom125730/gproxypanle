@@ -27,6 +27,7 @@ const maxLatencySamples = 1440;
 const maxCloudTrafficReports = 50;
 const maxCloudTrafficEntries = 200;
 const maxCloudSeenKeys = 5000;
+const cloudBucketHistoryMs = 24 * 60 * 60 * 1000;
 
 export class JsonStore {
   constructor(filePath) {
@@ -107,6 +108,7 @@ export class JsonStore {
         probes: node.agent?.probes || {},
       };
     }).sort((a, b) => b.totalBytes - a.totalBytes).slice(0, 8);
+    const cloudTrafficTrend = trafficTrend(nodes);
 
     return {
       totalNodes: nodes.length,
@@ -119,6 +121,7 @@ export class JsonStore {
       totalConnections,
       nodeLatency: nodeLatency.sort((a, b) => a.name.localeCompare(b.name)),
       nodeTraffic,
+      cloudTrafficTrend,
       totalCertificates: certs.length,
       expiringCertificates: certs.filter((cert) => {
         if (!cert.notAfter) return false;
@@ -176,29 +179,11 @@ export class JsonStore {
     if (!node) return null;
 
     const now = new Date().toISOString();
-    const previous = node.agent || {};
-    const rxCounter = toNonNegativeNumber(input.rxBytes ?? input.rxCounter);
-    const txCounter = toNonNegativeNumber(input.txBytes ?? input.txCounter);
-    const rxDelta = counterDelta(previous.rxCounter, rxCounter);
-    const txDelta = counterDelta(previous.txCounter, txCounter);
-    const intervalSeconds = reportIntervalSeconds(previous.reportedAt, now);
-    const rxBps = intervalSeconds > 0 ? Math.floor(rxDelta / intervalSeconds) : 0;
-    const txBps = intervalSeconds > 0 ? Math.floor(txDelta / intervalSeconds) : 0;
 
     node.agent = {
       status: input.status === 'up' ? 'up' : 'down',
       latencyMs: toNullableNumber(input.latencyMs),
       error: trimString(input.error, 240),
-      rxBytes: toNonNegativeNumber(previous.rxBytes) + rxDelta,
-      txBytes: toNonNegativeNumber(previous.txBytes) + txDelta,
-      lastRxBytes: rxDelta,
-      lastTxBytes: txDelta,
-      rxBps,
-      txBps,
-      reportIntervalSeconds: intervalSeconds,
-      rxCounter,
-      txCounter,
-      connections: toNonNegativeNumber(input.connections),
       uptimeSeconds: toNonNegativeNumber(input.uptimeSeconds),
       probes: normalizeProbes(input.probes),
       version: trimString(input.version, 40),
@@ -386,6 +371,7 @@ function mergeDb(value = {}) {
       configToken: node.configToken || newAccessToken(),
       agentToken: node.agentToken || newAgentToken(),
       cloudToken: node.cloudToken || newAccessToken(),
+      cloud: normalizeCloudState(node.cloud),
     };
     if (!node.configToken || !node.agentToken || !node.cloudToken || node.id !== id) changed = true;
     nodes[id] = normalized;
@@ -439,6 +425,23 @@ function normalizeCloudTrafficReports(value) {
       nodeId: trimString(report.nodeId, 160),
     };
   });
+}
+
+function normalizeCloudState(value) {
+  if (!value || typeof value !== 'object') return null;
+  return {
+    ...value,
+    rxBytes: toNonNegativeNumber(value.rxBytes),
+    txBytes: toNonNegativeNumber(value.txBytes),
+    lastRxBytes: toNonNegativeNumber(value.lastRxBytes),
+    lastTxBytes: toNonNegativeNumber(value.lastTxBytes),
+    rxBps: toNonNegativeNumber(value.rxBps),
+    txBps: toNonNegativeNumber(value.txBps),
+    requestCount: toNonNegativeNumber(value.requestCount),
+    lastRequestCount: toNonNegativeNumber(value.lastRequestCount),
+    buckets: appendCloudBuckets(value.buckets, [], value.reportedAt || new Date().toISOString()),
+    seen: normalizeSeenCloudTrafficKeys(value.seen),
+  };
 }
 
 function findNodeByCloudKey(nodes, nodeKey) {
@@ -495,6 +498,7 @@ function applyCloudTrafficToNode(node, report) {
       ...(Array.isArray(previous.secrets) ? previous.secrets : []),
       ...report.entries.map((entry) => entry.secret),
     ]).slice(-200),
+    buckets: appendCloudBuckets(previous.buckets, report.entries, now),
     seen: trimmedSeen,
   };
 
@@ -504,6 +508,44 @@ function applyCloudTrafficToNode(node, report) {
 function normalizeSeenCloudTrafficKeys(value) {
   if (!Array.isArray(value)) return [];
   return uniqueStrings(value.map((item) => trimString(item, 320)).filter(Boolean)).slice(-maxCloudSeenKeys);
+}
+
+function appendCloudBuckets(previousBuckets, entries, receivedAt) {
+  const cutoff = Date.now() - cloudBucketHistoryMs;
+  const buckets = new Map();
+
+  for (const bucket of Array.isArray(previousBuckets) ? previousBuckets : []) {
+    const timestamp = toNonNegativeNumber(bucket.timestamp);
+    if (!timestamp || timestamp < cutoff) continue;
+    const secret = trimString(bucket.secret, 160);
+    buckets.set(`${secret}:${timestamp}`, {
+      secret,
+      timestamp,
+      rxBytes: toNonNegativeNumber(bucket.rxBytes),
+      txBytes: toNonNegativeNumber(bucket.txBytes),
+      requestCount: toNonNegativeNumber(bucket.requestCount),
+      receivedAt: trimString(bucket.receivedAt, 40),
+    });
+  }
+
+  for (const entry of entries) {
+    const timestamp = toNonNegativeNumber(entry.timestamp);
+    if (!timestamp) continue;
+    const key = `${entry.secret}:${timestamp}`;
+    if (buckets.has(key)) continue;
+    buckets.set(key, {
+      secret: entry.secret,
+      timestamp,
+      rxBytes: entry.rxBytes,
+      txBytes: entry.txBytes,
+      requestCount: entry.requestCount,
+      receivedAt,
+    });
+  }
+
+  return [...buckets.values()]
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .slice(-1440);
 }
 
 function uniqueStrings(values) {
@@ -535,10 +577,7 @@ function withNodeStatus(node) {
   const cloud = node.cloud || {};
   const agentView = sourceStatus(agent, agentStaleMs);
   const cloudView = sourceStatus(cloud, cloudStaleMs);
-  const statusSource = chooseStatusSource(cloudView, agentView);
-  const trafficSourceName = cloudView.reportedAt ? 'cloud' : agentView.reportedAt ? 'agent' : '';
-  const trafficSource = trafficSourceName === 'cloud' ? cloud : agent;
-  const primary = statusSource.view;
+  const primary = cloudView;
   let state = 'waiting';
 
   if (node.enabled === false) {
@@ -557,22 +596,20 @@ function withNodeStatus(node) {
     ...node,
     status: {
       state,
-      source: statusSource.name,
+      source: cloudView.reportedAt ? 'cloud' : '',
       reportedAt: primary.reportedAt,
       stale: primary.stale,
       ageSeconds: primary.ageSeconds,
     },
     traffic: {
-      source: trafficSourceName,
-      rxBytes: toNonNegativeNumber(trafficSource.rxBytes),
-      txBytes: toNonNegativeNumber(trafficSource.txBytes),
-      lastRxBytes: toNonNegativeNumber(trafficSource.lastRxBytes),
-      lastTxBytes: toNonNegativeNumber(trafficSource.lastTxBytes),
-      rxBps: toNonNegativeNumber(trafficSource.rxBps),
-      txBps: toNonNegativeNumber(trafficSource.txBps),
-      connections: trafficSourceName === 'cloud'
-        ? toNonNegativeNumber(cloud.requestCount)
-        : toNonNegativeNumber(agent.connections),
+      source: cloudView.reportedAt ? 'cloud' : '',
+      rxBytes: toNonNegativeNumber(cloud.rxBytes),
+      txBytes: toNonNegativeNumber(cloud.txBytes),
+      lastRxBytes: toNonNegativeNumber(cloud.lastRxBytes),
+      lastTxBytes: toNonNegativeNumber(cloud.lastTxBytes),
+      rxBps: toNonNegativeNumber(cloud.rxBps),
+      txBps: toNonNegativeNumber(cloud.txBps),
+      connections: toNonNegativeNumber(cloud.requestCount),
       requestCount: toNonNegativeNumber(cloud.requestCount),
       lastRequestCount: toNonNegativeNumber(cloud.lastRequestCount),
       reportedAt: primary.reportedAt,
@@ -590,14 +627,6 @@ function withNodeStatus(node) {
       ageSeconds: cloudView.ageSeconds,
     },
   };
-}
-
-function chooseStatusSource(cloudView, agentView) {
-  if (cloudView.reportedAt && !cloudView.stale) return { name: 'cloud', view: cloudView };
-  if (agentView.reportedAt && !agentView.stale) return { name: 'agent', view: agentView };
-  if (cloudView.reportedAt) return { name: 'cloud', view: cloudView };
-  if (agentView.reportedAt) return { name: 'agent', view: agentView };
-  return { name: '', view: cloudView };
 }
 
 function sourceStatus(source, staleMs) {
@@ -703,6 +732,48 @@ function nodeLatencySummary(node) {
       ct: sample.ct ?? null,
     })),
   };
+}
+
+function trafficTrend(nodes) {
+  const byTimestamp = new Map();
+  const bySecret = new Map();
+
+  for (const node of nodes) {
+    const buckets = Array.isArray(node.cloud?.buckets) ? node.cloud.buckets : [];
+    for (const bucket of buckets) {
+      const timestamp = toNonNegativeNumber(bucket.timestamp);
+      if (!timestamp) continue;
+      const point = byTimestamp.get(timestamp) || {
+        timestamp,
+        rxBytes: 0,
+        txBytes: 0,
+        requestCount: 0,
+      };
+      point.rxBytes += toNonNegativeNumber(bucket.rxBytes);
+      point.txBytes += toNonNegativeNumber(bucket.txBytes);
+      point.requestCount += toNonNegativeNumber(bucket.requestCount);
+      byTimestamp.set(timestamp, point);
+
+      const secret = bucket.secret || 'unknown';
+      const secretItem = bySecret.get(secret) || {
+        secret,
+        rxBytes: 0,
+        txBytes: 0,
+        requestCount: 0,
+      };
+      secretItem.rxBytes += toNonNegativeNumber(bucket.rxBytes);
+      secretItem.txBytes += toNonNegativeNumber(bucket.txBytes);
+      secretItem.requestCount += toNonNegativeNumber(bucket.requestCount);
+      bySecret.set(secret, secretItem);
+    }
+  }
+
+  const points = [...byTimestamp.values()].sort((a, b) => a.timestamp - b.timestamp).slice(-96);
+  const secrets = [...bySecret.values()]
+    .sort((a, b) => (b.rxBytes + b.txBytes) - (a.rxBytes + a.txBytes))
+    .slice(0, 8);
+
+  return { points, secrets };
 }
 
 function normalizeProbes(value) {

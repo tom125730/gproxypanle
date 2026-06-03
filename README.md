@@ -218,8 +218,8 @@ cloud:
 gproxy reports minute-bucket traffic records with `secret`, `timestamp`,
 `rxBytes`, `txBytes`, and `requestCount`. The panel uses the `X-Node-Key`
 header to match the node, deduplicates records by `nodeKey + secret +
-timestamp`, and uses cloud reports as the primary source for node online status
-and traffic totals.
+timestamp`, and uses cloud reports as the source for node online status and
+traffic totals.
 
 If a node has no traffic, gproxy may not emit a cloud report. The cloud status is
 treated as stale after about 25 minutes without reports.
@@ -228,9 +228,9 @@ treated as stale after about 25 minutes without reports.
 
 ## Optional Node Monitoring Agent
 
-The native cloud reporter is the primary source for uptime and traffic. The
-lightweight agent can still be installed on each gproxy node VPS as an optional
-fallback for extra TCP probes, host uptime, and remote deploy commands.
+The native cloud reporter is the source for online status and traffic. The
+lightweight agent can still be installed on each gproxy node VPS for extra TCP
+latency probes, host uptime, and remote Docker deploy commands.
 
 After creating or editing a node in `/nodes`, copy the generated Agent command
 from the node table and run it on that node VPS as root. It looks like this:
@@ -264,8 +264,6 @@ The agent uses the per-node `agentToken` shown in the install command. It sends:
 - TCP latency to China Mobile: `js-cm-v4.ip.zstaticcdn.com:80`
 - TCP latency to China Unicom: `js-cu-v4.ip.zstaticcdn.com:80`
 - TCP latency to China Telecom: `js-ct-v4.ip.zstaticcdn.com:80`
-- connection count from `ss`
-- RX/TX byte counters from `iptables`
 - host uptime
 
 Traffic from cloud reports is node-level and grouped by gproxy `secret`. The
