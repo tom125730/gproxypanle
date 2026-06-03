@@ -122,7 +122,7 @@ export function trafficPanelBody(metrics) {
       <div><span>Total</span><strong>${escapeHtml(formatBytes(metrics.totalTrafficBytes))}</strong></div>
     </div>
     ${trafficTrendChart(metrics.cloudTrafficTrend)}
-    ${trafficTokenTable(metrics.cloudTrafficTrend)}
+    <div data-traffic-token-list>${trafficTokenTable(metrics.cloudTrafficTrend)}</div>
   `;
 }
 
@@ -288,7 +288,7 @@ function cloudReportDetails(report) {
   </section>`;
 }
 
-export function certificatesPage(certs, editingCert = null, adminAuth = 'admin:ADMIN_PASS') {
+export function certificatesPage(certs, editingCert = null) {
   const cert = editingCert || {};
   const isEditing = Boolean(editingCert);
   const action = isEditing ? `/api/cert/${encodeURIComponent(cert.id)}` : '/api/cert';
@@ -318,7 +318,7 @@ export function certificatesPage(certs, editingCert = null, adminAuth = 'admin:A
         cert.notAfter,
         cert.daysRemaining ?? '',
         html(`<a href="/c/${encodeURIComponent(cert.id)}/cert">cert</a> <a href="/c/${encodeURIComponent(cert.id)}/key">key</a>`),
-        html(`<button class="copy-command" type="button" data-renew-command data-cert-id="${escapeAttr(cert.id)}" data-domain="${escapeAttr(cert.domain || cert.id)}" data-auth="${escapeAttr(adminAuth)}">Renew hook</button>`),
+        html(`<button class="copy-command" type="button" data-renew-command data-cert-id="${escapeAttr(cert.id)}" data-cert-token="${escapeAttr(cert.uploadToken || '')}" data-domain="${escapeAttr(cert.domain || cert.id)}">Renew hook</button>`),
         html(`<div class="row-actions"><a class="button-link small" href="/certificates/${encodeURIComponent(cert.id)}/edit">Edit</a>${deleteForm(`/api/cert/${encodeURIComponent(cert.id)}`)}</div>`),
       ]))}
     </section>
@@ -563,9 +563,17 @@ function trafficTrendChart(trend) {
     label: formatBytes(maxBytes * ratio),
   }));
 
-  return `<div class="traffic-trend">
+  const datasets = trafficTrendDatasets(trend);
+
+  return `<div class="traffic-trend" data-traffic-trend>
+    <script type="application/json" data-traffic-trend-data>${escapeScriptJson(datasets)}</script>
     <div class="traffic-trend-head">
       <strong>Token Traffic Trend</strong>
+      <label class="traffic-node-select">Node
+        <select data-traffic-node-select>
+          ${datasets.map((dataset) => `<option value="${escapeAttr(dataset.id)}">${escapeHtml(dataset.name)}</option>`).join('')}
+        </select>
+      </label>
       <div class="traffic-legend">
         ${legendDot('RX', 'traffic-rx')}
         ${legendDot('TX', 'traffic-tx')}
@@ -573,7 +581,8 @@ function trafficTrendChart(trend) {
         ${legendDot('Requests', 'traffic-requests')}
       </div>
     </div>
-    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Cloud traffic trend">
+    <div class="traffic-tooltip" data-traffic-tooltip hidden></div>
+    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Cloud traffic trend" data-traffic-svg>
       <defs>
         <linearGradient id="traffic-total-fill" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.24"></stop>
@@ -592,21 +601,33 @@ function trafficTrendChart(trend) {
         const x = pad.left + chartWidth * ratio;
         return `<line class="chart-grid vertical" x1="${formatNumber(x)}" y1="${pad.top}" x2="${formatNumber(x)}" y2="${pad.top + chartHeight}"></line>`;
       }).join('')}
-      ${yLabels.map((item) => `<text class="chart-axis" x="${pad.left - 8}" y="${formatNumber(item.y + 4)}" text-anchor="end">${escapeHtml(item.label)}</text>`).join('')}
-      ${xLabels.map((item) => `<text class="chart-axis x-axis" x="${formatNumber(item.x)}" y="${height - 16}" text-anchor="middle">${escapeHtml(item.label)}</text>`).join('')}
+      <g data-traffic-y-axis>${yLabels.map((item) => `<text class="chart-axis" x="${pad.left - 8}" y="${formatNumber(item.y + 4)}" text-anchor="end">${escapeHtml(item.label)}</text>`).join('')}</g>
+      <g data-traffic-x-axis>${xLabels.map((item) => `<text class="chart-axis x-axis" x="${formatNumber(item.x)}" y="${height - 16}" text-anchor="middle">${escapeHtml(item.label)}</text>`).join('')}</g>
       <path class="traffic-area traffic-total-area" d="${escapeAttr(totalArea)}"></path>
       <path class="traffic-area traffic-rx-area" d="${escapeAttr(rxArea)}"></path>
       <path class="traffic-line traffic-total-line" d="${escapeAttr(totalPath)}"></path>
       <path class="traffic-line traffic-rx-line" d="${escapeAttr(rxPath)}"></path>
       <path class="traffic-line traffic-tx-line" d="${escapeAttr(txPath)}"></path>
       <path class="traffic-line traffic-request-line" d="${escapeAttr(requestPath)}"></path>
-      ${points.map((point, index) => {
+      <g data-traffic-points>${points.map((point, index) => {
         const x = xAt(index);
         const totalY = bytesY(point.rxBytes + point.txBytes);
         return `<circle class="traffic-point" cx="${formatNumber(x)}" cy="${formatNumber(totalY)}" r="2.5"><title>${escapeHtml(`${formatTrafficTimestamp(point.timestamp)} total ${formatBytes(point.rxBytes + point.txBytes)} requests ${point.requestCount}`)}</title></circle>`;
-      }).join('')}
+      }).join('')}</g>
     </svg>
   </div>`;
+}
+
+function trafficTrendDatasets(trend) {
+  return [
+    {
+      id: 'all',
+      name: 'All Nodes',
+      points: trend?.points || [],
+      secrets: trend?.secrets || [],
+    },
+    ...(trend?.nodes || []).filter((node) => node.points?.length),
+  ];
 }
 
 function trafficTokenTable(trend) {
@@ -881,4 +902,8 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
   return escapeHtml(value);
+}
+
+function escapeScriptJson(value) {
+  return JSON.stringify(value).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
 }

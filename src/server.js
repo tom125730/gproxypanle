@@ -24,8 +24,8 @@ const config = {
   host: process.env.HOST || '0.0.0.0',
   port: Number(process.env.PORT || 3000),
   adminUser: process.env.ADMIN_USER || 'admin',
-  adminPass: process.env.ADMIN_PASS || 'Aa.114514',
-  sessionSecret: process.env.SESSION_SECRET || process.env.ADMIN_PASS || 'Aa.114514',
+  adminPass: process.env.ADMIN_PASS || crypto.randomBytes(24).toString('base64url'),
+  sessionSecret: process.env.SESSION_SECRET || process.env.ADMIN_PASS || crypto.randomBytes(32).toString('base64url'),
   dataFile: process.env.DATA_FILE || path.resolve(__dirname, '..', 'data', 'db.json'),
   publicBaseUrl: process.env.PUBLIC_BASE_URL || '',
   maxBodyBytes: Number(process.env.MAX_BODY_BYTES || 1048576),
@@ -147,11 +147,11 @@ async function route(req, res) {
     return node ? sendHtml(res, nodesPage(store.listNodes(), store.listCerts(), node)) : notFound(res);
   }
   if (req.method === 'GET' && url.pathname === '/certificates') {
-    return sendHtml(res, certificatesPage(store.listCerts(), null, adminAuthPair()));
+    return sendHtml(res, certificatesPage(store.listCerts()));
   }
   if (req.method === 'GET' && segments[0] === 'certificates' && segments[1] && segments[2] === 'edit') {
     const cert = store.getCert(segments[1]);
-    return cert ? sendHtml(res, certificatesPage(store.listCerts(), cert, adminAuthPair())) : notFound(res);
+    return cert ? sendHtml(res, certificatesPage(store.listCerts(), cert)) : notFound(res);
   }
   if (req.method === 'GET' && url.pathname === '/subscriptions') return sendHtml(res, subscriptionsPage(store.listUsers()));
   if (req.method === 'GET' && url.pathname === '/users') return sendHtml(res, usersPage(store.listUsers()));
@@ -358,7 +358,7 @@ function requireAuth(req, res, url) {
 }
 
 function isAuthenticated(req, url) {
-  return hasValidSession(req) || hasBasicAuth(req, url);
+  return hasValidSession(req) || hasBasicAuth(req, url) || hasCertUploadToken(req, url);
 }
 
 async function verifyAdminLogin(input) {
@@ -388,6 +388,14 @@ function hasBasicAuth(req, url) {
 
 function isBasicAuthAllowed(req, url) {
   return req.method === 'POST' && url.pathname.startsWith('/api/cert');
+}
+
+function hasCertUploadToken(req, url) {
+  if (req.method !== 'POST' || !url.pathname.startsWith('/api/cert')) return false;
+  const segments = url.pathname.split('/').filter(Boolean);
+  const cert = segments[2] ? store.getCert(segments[2]) : null;
+  const token = url.searchParams.get('token') || '';
+  return Boolean(cert?.uploadToken && token && safeEqual(token, cert.uploadToken));
 }
 
 function bearerToken(req) {
@@ -477,13 +485,11 @@ function clearLoginAttempts(key) {
   loginAttempts.delete(key);
 }
 
-function adminAuthPair() {
-  return `${config.adminUser}:${config.adminPass}`;
-}
-
 function warnInsecureDefaults() {
   if (!process.env.ADMIN_PASS) {
-    console.warn('WARNING: ADMIN_PASS is not set. Set a strong ADMIN_PASS before exposing this panel.');
+    console.warn('WARNING: ADMIN_PASS is not set. A one-time random initial password was generated for this process.');
+    console.warn(`WARNING: Initial admin password: ${config.adminPass}`);
+    console.warn('WARNING: Set ADMIN_PASS before first persistent deployment or change the password in Settings.');
   }
   if (!process.env.SESSION_SECRET) {
     console.warn('WARNING: SESSION_SECRET is not set. Set a long random SESSION_SECRET before exposing this panel.');

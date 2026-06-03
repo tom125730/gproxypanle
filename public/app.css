@@ -318,6 +318,7 @@ h2 {
   background: #fff;
   padding: 14px;
   margin-bottom: 14px;
+  position: relative;
 }
 
 .traffic-trend-head {
@@ -326,6 +327,20 @@ h2 {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.traffic-node-select {
+  display: inline-flex;
+  align-items: center;
+  grid-auto-flow: column;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.traffic-node-select select {
+  min-width: 180px;
+  padding: 7px 9px;
 }
 
 .traffic-legend {
@@ -424,6 +439,29 @@ h2 {
   fill: #06b6d4;
   stroke: #fff;
   stroke-width: 1.5;
+}
+
+.traffic-tooltip {
+  position: absolute;
+  z-index: 5;
+  width: 200px;
+  border-radius: 8px;
+  background: rgb(24 32 42 / 92%);
+  color: #fff;
+  padding: 10px 12px;
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  pointer-events: none;
+  box-shadow: 0 12px 28px rgb(24 32 42 / 18%);
+}
+
+.traffic-tooltip strong {
+  font-size: 13px;
+}
+
+.traffic-tooltip span {
+  color: #e7edf6;
 }
 
 .traffic-token-grid {

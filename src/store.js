@@ -275,6 +275,7 @@ export class JsonStore {
     const cert = withCertDays({
       id,
       domain: input.domain || previous.domain || '',
+      uploadToken: input.uploadToken || previous.uploadToken || newAccessToken(),
       issuer: input.issuer || parsed.issuer || previous.issuer || '',
       notBefore: input.notBefore || parsed.notBefore || previous.notBefore || '',
       notAfter: input.notAfter || parsed.notAfter || previous.notAfter || '',
@@ -377,12 +378,24 @@ function mergeDb(value = {}) {
     nodes[id] = normalized;
   }
 
+  const certs = {};
+  for (const [key, cert] of Object.entries(value.certs || {})) {
+    const id = cert.id || key;
+    const normalized = {
+      ...cert,
+      id,
+      uploadToken: cert.uploadToken || newAccessToken(),
+    };
+    if (!cert.uploadToken || cert.id !== id) changed = true;
+    certs[id] = normalized;
+  }
+
   return {
     db: {
       ...structuredClone(emptyDb),
       ...value,
       nodes,
-      certs: value.certs || {},
+      certs,
       users: value.users || {},
       cloudTrafficReports: normalizeCloudTrafficReports(value.cloudTrafficReports),
       settings: {
@@ -737,9 +750,12 @@ function nodeLatencySummary(node) {
 function trafficTrend(nodes) {
   const byTimestamp = new Map();
   const bySecret = new Map();
+  const nodeItems = [];
 
   for (const node of nodes) {
     const buckets = Array.isArray(node.cloud?.buckets) ? node.cloud.buckets : [];
+    const nodeByTimestamp = new Map();
+    const nodeBySecret = new Map();
     for (const bucket of buckets) {
       const timestamp = toNonNegativeNumber(bucket.timestamp);
       if (!timestamp) continue;
@@ -765,7 +781,37 @@ function trafficTrend(nodes) {
       secretItem.txBytes += toNonNegativeNumber(bucket.txBytes);
       secretItem.requestCount += toNonNegativeNumber(bucket.requestCount);
       bySecret.set(secret, secretItem);
+
+      const nodePoint = nodeByTimestamp.get(timestamp) || {
+        timestamp,
+        rxBytes: 0,
+        txBytes: 0,
+        requestCount: 0,
+      };
+      nodePoint.rxBytes += toNonNegativeNumber(bucket.rxBytes);
+      nodePoint.txBytes += toNonNegativeNumber(bucket.txBytes);
+      nodePoint.requestCount += toNonNegativeNumber(bucket.requestCount);
+      nodeByTimestamp.set(timestamp, nodePoint);
+
+      const nodeSecretItem = nodeBySecret.get(secret) || {
+        secret,
+        rxBytes: 0,
+        txBytes: 0,
+        requestCount: 0,
+      };
+      nodeSecretItem.rxBytes += toNonNegativeNumber(bucket.rxBytes);
+      nodeSecretItem.txBytes += toNonNegativeNumber(bucket.txBytes);
+      nodeSecretItem.requestCount += toNonNegativeNumber(bucket.requestCount);
+      nodeBySecret.set(secret, nodeSecretItem);
     }
+    nodeItems.push({
+      id: node.id,
+      name: node.name || node.id,
+      points: [...nodeByTimestamp.values()].sort((a, b) => a.timestamp - b.timestamp).slice(-96),
+      secrets: [...nodeBySecret.values()]
+        .sort((a, b) => (b.rxBytes + b.txBytes) - (a.rxBytes + a.txBytes))
+        .slice(0, 8),
+    });
   }
 
   const points = [...byTimestamp.values()].sort((a, b) => a.timestamp - b.timestamp).slice(-96);
@@ -773,7 +819,7 @@ function trafficTrend(nodes) {
     .sort((a, b) => (b.rxBytes + b.txBytes) - (a.rxBytes + a.txBytes))
     .slice(0, 8);
 
-  return { points, secrets };
+  return { points, secrets, nodes: nodeItems };
 }
 
 function normalizeProbes(value) {
