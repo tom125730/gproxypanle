@@ -24,7 +24,7 @@ const agentStaleMs = 180000;
 const cloudStaleMs = 25 * 60 * 1000;
 const latencyHistoryMs = 24 * 60 * 60 * 1000;
 const maxLatencySamples = 1440;
-const maxCloudTrafficReports = 50;
+const maxCloudTrafficReports = 20;
 const maxCloudTrafficEntries = 200;
 const maxCloudSeenKeys = 5000;
 const cloudBucketHistoryMs = 24 * 60 * 60 * 1000;
@@ -229,10 +229,6 @@ export class JsonStore {
     return withNodeStatus(node);
   }
 
-  listCloudTrafficReports() {
-    return Array.isArray(this.db.cloudTrafficReports) ? this.db.cloudTrafficReports : [];
-  }
-
   async recordCloudTrafficReport(input) {
     const entries = normalizeCloudTrafficEntries(input.entries);
     const report = {
@@ -266,11 +262,6 @@ export class JsonStore {
       console.error('failed to save cloud traffic report', error);
     });
     return report;
-  }
-
-  async clearCloudTrafficReports() {
-    this.db.cloudTrafficReports = [];
-    await this.save();
   }
 
   async pruneUnknownCloudTrafficReports() {

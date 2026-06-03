@@ -3,7 +3,6 @@ export function layout(title, active, body, options = {}) {
   const nav = authenticated ? [
     ['/', 'Dashboard'],
     ['/report', 'Report'],
-    ['/cloud-test', 'Cloud Test'],
     ['/nodes', 'Nodes'],
     ['/certificates', 'Certificates'],
     ['/subscriptions', 'Subscriptions'],
@@ -200,92 +199,6 @@ export function reportPage(nodes) {
       ]))}
     </section>
   `);
-}
-
-export function cloudTestPage(model) {
-  const reports = model.reports || [];
-  const latest = reports[0] || null;
-  const sampleUrl = model.publicBaseUrl || 'https://your-panel.example';
-
-  return layout('Cloud Test', 'Cloud Test', `
-    <header class="topbar">
-      <div>
-        <p class="eyebrow">gproxy Cloud</p>
-        <h1>Cloud Test</h1>
-      </div>
-      <form method="post" action="/api/cloud-test/reports">
-        <input type="hidden" name="_method" value="DELETE">
-        <button class="danger" type="submit">Clear Reports</button>
-      </form>
-    </header>
-    <section class="panel">
-      <div class="panel-head">
-        <h2>Receiver</h2>
-        <span class="muted">${escapeHtml(reports.length)} reports</span>
-      </div>
-      <div class="cloud-config">
-        <div>
-          <span class="muted">Endpoint</span>
-          <code>POST ${escapeHtml(sampleUrl)}/api/v1/traffic</code>
-        </div>
-        <div>
-          <span class="muted">YAML</span>
-          <pre>cloud:
-  nodeKey: &lt;node cloud token&gt;
-  url: ${escapeHtml(sampleUrl)}</pre>
-        </div>
-      </div>
-    </section>
-    ${latest ? cloudSummary(latest) : ''}
-    <section class="table-wrap cloud-test-wrap">
-      ${table(['Received', 'Node', 'Node Key', 'Entries', 'RX', 'TX', 'Requests', 'Remote'], reports.map((report) => [
-        html(`${escapeHtml(report.receivedAt || '')}<br><span class="muted">${escapeHtml(report.path || '')}</span>`),
-        report.nodeId || '',
-        html(`<code>${escapeHtml(report.nodeKey || 'missing')}</code>`),
-        html(`${escapeHtml(report.acceptedEntryCount ?? report.entries?.length ?? 0)} accepted<br><span class="muted">${escapeHtml(report.duplicateEntryCount || 0)} duplicate</span>`),
-        formatBytes(report.totalRxBytes || 0),
-        formatBytes(report.totalTxBytes || 0),
-        report.totalRequestCount || 0,
-        report.remoteAddress || '',
-      ]))}
-    </section>
-    ${reports.map(cloudReportDetails).join('')}
-  `);
-}
-
-function cloudSummary(report) {
-  return `<section class="metrics cloud-metrics">
-    ${metric('Latest Entries', report.entries?.length || 0, '#', false)}
-    ${metric('Latest RX', formatBytes(report.totalRxBytes || 0), '#', false)}
-    ${metric('Latest TX', formatBytes(report.totalTxBytes || 0), '#', false)}
-    ${metric('Latest Requests', report.totalRequestCount || 0, '#', false)}
-  </section>`;
-}
-
-function cloudReportDetails(report) {
-  const entries = report.entries || [];
-  return `<section class="panel cloud-report">
-    <div class="panel-head">
-      <h2>${escapeHtml(report.receivedAt || 'Report')}</h2>
-      <span class="muted">${escapeHtml(report.nodeKey || 'missing node key')}</span>
-    </div>
-    <div class="table-wrap cloud-entry-wrap">
-      ${table(['Secret', 'Timestamp', 'RX', 'TX', 'Requests'], entries.map((entry) => [
-        html(`<code>${escapeHtml(entry.secret || '')}</code>`),
-        html(`${escapeHtml(formatTrafficTimestamp(entry.timestamp))}<br><span class="muted">${escapeHtml(entry.timestamp || '')}</span>`),
-        formatBytes(entry.rxBytes || 0),
-        formatBytes(entry.txBytes || 0),
-        entry.requestCount || 0,
-      ]))}
-    </div>
-    <details class="cloud-raw">
-      <summary>Raw JSON</summary>
-      <pre>${escapeHtml(JSON.stringify({
-    headers: report.headers,
-    entries,
-  }, null, 2))}</pre>
-    </details>
-  </section>`;
 }
 
 export function certificatesPage(certs, editingCert = null) {

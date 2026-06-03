@@ -224,7 +224,14 @@ traffic totals.
 If a node has no traffic, gproxy may not emit a cloud report. The cloud status is
 treated as stale after about 25 minutes without reports.
 
-`/cloud-test` shows the latest raw cloud report batches for troubleshooting.
+Traffic storage is bounded in the JSON database:
+
+- recent raw cloud report batches: latest 20 only
+- per-node chart buckets: last 24 hours, capped at 1440 buckets
+- duplicate-detection keys: latest 5000 per node
+
+This keeps telemetry from growing without limit while preserving enough recent
+data for the Dashboard trend chart.
 
 ## Optional Node Monitoring Agent
 

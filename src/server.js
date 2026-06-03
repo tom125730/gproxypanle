@@ -12,7 +12,6 @@ import {
   nodesPage,
   reportPage,
   settingsPage,
-  cloudTestPage,
   subscriptionsPage,
   trafficPanelBody,
   usersPage,
@@ -139,9 +138,6 @@ async function route(req, res) {
   if (!requireAuth(req, res, url)) return;
 
   if (req.method === 'GET' && url.pathname === '/report') return sendHtml(res, reportPage(store.listNodes()));
-  if (req.method === 'GET' && url.pathname === '/cloud-test') {
-    return sendHtml(res, cloudTestPage(cloudTestModel(req)));
-  }
   if (req.method === 'GET' && url.pathname === '/nodes') return sendHtml(res, nodesPage(store.listNodes(), store.listCerts()));
   if (req.method === 'GET' && segments[0] === 'nodes' && segments[1] && segments[2] === 'edit') {
     const node = store.getNode(segments[1]);
@@ -174,11 +170,6 @@ async function apiRoute(req, res, segments) {
 
   if (method === 'GET' && segments[0] === 'metrics' && segments[1] === 'traffic') {
     return trafficMetricsRoute(res);
-  }
-
-  if (method === 'DELETE' && segments[0] === 'cloud-test' && segments[1] === 'reports') {
-    await store.clearCloudTrafficReports();
-    return wantsJson(req) ? sendJson(res, 200, { ok: true }) : redirect(res, '/cloud-test');
   }
 
   if (method === 'GET' && segments[0] === 'nodes') return sendJson(res, 200, store.listNodes());
@@ -296,14 +287,6 @@ async function cloudTrafficRoute(req, res, url) {
   });
 
   return sendJson(res, 200, { code: 0, message: 'ok', data: null });
-}
-
-function cloudTestModel(req) {
-  const publicBaseUrl = store.settings().publicBaseUrl || requestBaseUrl(req);
-  return {
-    publicBaseUrl: publicBaseUrl.replace(/\/+$/, ''),
-    reports: store.listCloudTrafficReports(),
-  };
 }
 
 async function createNodeDeployCommand(req, res, nodeId) {

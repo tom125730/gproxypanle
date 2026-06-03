@@ -881,67 +881,6 @@ button.small {
   white-space: nowrap;
 }
 
-.cloud-config {
-  display: grid;
-  gap: 14px;
-}
-
-.cloud-config > div {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 12px;
-  background: #fbfcfe;
-  display: grid;
-  gap: 8px;
-}
-
-.cloud-config pre,
-.cloud-raw pre {
-  margin: 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.cloud-metrics {
-  margin-bottom: 18px;
-}
-
-.cloud-test-wrap {
-  margin-bottom: 18px;
-}
-
-.cloud-test-wrap table {
-  min-width: 900px;
-}
-
-.cloud-report {
-  display: grid;
-  gap: 14px;
-}
-
-.cloud-entry-wrap table {
-  min-width: 760px;
-}
-
-.cloud-raw summary {
-  color: var(--accent);
-  cursor: pointer;
-  font-weight: 700;
-  margin-bottom: 10px;
-}
-
-.cloud-raw pre {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 12px;
-  background: #fbfcfe;
-  max-height: 420px;
-  overflow: auto;
-}
-
 table {
   border-collapse: collapse;
   width: 100%;
