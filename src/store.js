@@ -21,10 +21,12 @@ const emptyDb = {
 
 const defaultNodeSecret = '3c999130';
 const agentStaleMs = 180000;
+const cloudStaleMs = 25 * 60 * 1000;
 const latencyHistoryMs = 24 * 60 * 60 * 1000;
 const maxLatencySamples = 1440;
 const maxCloudTrafficReports = 50;
 const maxCloudTrafficEntries = 200;
+const maxCloudSeenKeys = 5000;
 
 export class JsonStore {
   constructor(filePath) {
@@ -61,7 +63,7 @@ export class JsonStore {
 
   metrics() {
     const now = Date.now();
-    const nodes = Object.values(this.db.nodes).map(withNodeAgentStatus);
+    const nodes = Object.values(this.db.nodes).map(withNodeStatus);
     const certs = Object.values(this.db.certs);
     const users = Object.values(this.db.users);
     const statusCounts = {
@@ -78,37 +80,38 @@ export class JsonStore {
     const nodeLatency = [];
 
     const nodeTraffic = nodes.map((node) => {
-      const agent = node.agent || {};
-      const rxBytes = toNonNegativeNumber(agent.rxBytes);
-      const txBytes = toNonNegativeNumber(agent.txBytes);
-      const rxBps = toNonNegativeNumber(agent.rxBps);
-      const txBps = toNonNegativeNumber(agent.txBps);
+      const status = node.status || {};
+      const traffic = node.traffic || {};
+      const rxBytes = toNonNegativeNumber(traffic.rxBytes);
+      const txBytes = toNonNegativeNumber(traffic.txBytes);
+      const rxBps = toNonNegativeNumber(traffic.rxBps);
+      const txBps = toNonNegativeNumber(traffic.txBps);
       const totalBytes = rxBytes + txBytes;
 
-      statusCounts[agent.state] = (statusCounts[agent.state] || 0) + 1;
+      statusCounts[status.state] = (statusCounts[status.state] || 0) + 1;
       totalRxBytes += rxBytes;
       totalTxBytes += txBytes;
-      totalConnections += toNonNegativeNumber(agent.connections);
+      totalConnections += toNonNegativeNumber(traffic.connections);
       nodeLatency.push(nodeLatencySummary(node));
 
       return {
         id: node.id,
         name: node.name || node.id,
-        state: agent.state,
+        state: status.state,
         rxBytes,
         txBytes,
         rxBps,
         txBps,
         totalBytes,
-        latencyMs: agent.latencyMs ?? null,
-        probes: agent.probes || {},
+        latencyMs: node.agent?.latencyMs ?? null,
+        probes: node.agent?.probes || {},
       };
     }).sort((a, b) => b.totalBytes - a.totalBytes).slice(0, 8);
 
     return {
       totalNodes: nodes.length,
       onlineNodes: statusCounts.up,
-      reportingNodes: nodes.filter((node) => node.agent.reportedAt).length,
+      reportingNodes: nodes.filter((node) => node.status.reportedAt).length,
       statusCounts,
       totalRxBytes,
       totalTxBytes,
@@ -128,12 +131,12 @@ export class JsonStore {
   }
 
   listNodes() {
-    return Object.values(this.db.nodes).map(withNodeAgentStatus).sort(byId);
+    return Object.values(this.db.nodes).map(withNodeStatus).sort(byId);
   }
 
   getNode(id) {
     const node = this.db.nodes[id];
-    return node ? withNodeAgentStatus(node) : null;
+    return node ? withNodeStatus(node) : null;
   }
 
   async setNode(id, input) {
@@ -150,7 +153,9 @@ export class JsonStore {
       certId: input.certId || previous.certId || '',
       configToken: input.configToken || previous.configToken || newAccessToken(),
       agentToken: input.agentToken || previous.agentToken || newAgentToken(),
+      cloudToken: input.cloudToken || previous.cloudToken || newAccessToken(),
       agent: previous.agent || null,
+      cloud: previous.cloud || null,
       agentCommand: previous.agentCommand || null,
       socks5: toBool(input.socks5, previous.socks5 ?? false),
       relay: toBool(input.relay, previous.relay ?? false),
@@ -203,7 +208,7 @@ export class JsonStore {
     node.latencyHistory = appendLatencySample(node.latencyHistory, node.agent, now);
 
     await this.save();
-    return withNodeAgentStatus(node);
+    return withNodeStatus(node);
   }
 
   listCloudTrafficReports() {
@@ -224,7 +229,18 @@ export class JsonStore {
       totalRxBytes: entries.reduce((sum, entry) => sum + entry.rxBytes, 0),
       totalTxBytes: entries.reduce((sum, entry) => sum + entry.txBytes, 0),
       totalRequestCount: entries.reduce((sum, entry) => sum + entry.requestCount, 0),
+      acceptedEntryCount: 0,
+      duplicateEntryCount: 0,
+      nodeId: '',
     };
+
+    const node = findNodeByCloudKey(this.db.nodes, report.nodeKey);
+    if (node) {
+      const result = applyCloudTrafficToNode(node, report);
+      report.nodeId = node.id;
+      report.acceptedEntryCount = result.acceptedEntryCount;
+      report.duplicateEntryCount = result.duplicateEntryCount;
+    }
 
     const previous = Array.isArray(this.db.cloudTrafficReports) ? this.db.cloudTrafficReports : [];
     this.db.cloudTrafficReports = [report, ...previous].slice(0, maxCloudTrafficReports);
@@ -242,7 +258,7 @@ export class JsonStore {
     if (!node) return null;
     node.agentCommand = command;
     await this.save();
-    return withNodeAgentStatus(node);
+    return withNodeStatus(node);
   }
 
   async clearNodeAgentCommand(id) {
@@ -250,7 +266,7 @@ export class JsonStore {
     if (!node) return null;
     node.agentCommand = null;
     await this.save();
-    return withNodeAgentStatus(node);
+    return withNodeStatus(node);
   }
 
   async deleteNode(id) {
@@ -369,8 +385,9 @@ function mergeDb(value = {}) {
       id,
       configToken: node.configToken || newAccessToken(),
       agentToken: node.agentToken || newAgentToken(),
+      cloudToken: node.cloudToken || newAccessToken(),
     };
-    if (!node.configToken || !node.agentToken || node.id !== id) changed = true;
+    if (!node.configToken || !node.agentToken || !node.cloudToken || node.id !== id) changed = true;
     nodes[id] = normalized;
   }
 
@@ -417,8 +434,80 @@ function normalizeCloudTrafficReports(value) {
       totalRxBytes: toNonNegativeNumber(report.totalRxBytes ?? entries.reduce((sum, entry) => sum + entry.rxBytes, 0)),
       totalTxBytes: toNonNegativeNumber(report.totalTxBytes ?? entries.reduce((sum, entry) => sum + entry.txBytes, 0)),
       totalRequestCount: toNonNegativeNumber(report.totalRequestCount ?? entries.reduce((sum, entry) => sum + entry.requestCount, 0)),
+      acceptedEntryCount: toNonNegativeNumber(report.acceptedEntryCount),
+      duplicateEntryCount: toNonNegativeNumber(report.duplicateEntryCount),
+      nodeId: trimString(report.nodeId, 160),
     };
   });
+}
+
+function findNodeByCloudKey(nodes, nodeKey) {
+  const key = String(nodeKey || '');
+  if (!key) return null;
+  return Object.values(nodes).find((node) => node.cloudToken === key || node.id === key) || null;
+}
+
+function applyCloudTrafficToNode(node, report) {
+  const now = report.receivedAt;
+  const previous = node.cloud || {};
+  const seen = normalizeSeenCloudTrafficKeys(previous.seen);
+  let acceptedEntryCount = 0;
+  let duplicateEntryCount = 0;
+  let rxDelta = 0;
+  let txDelta = 0;
+  let requestDelta = 0;
+
+  for (const entry of report.entries) {
+    const key = `${entry.secret}:${entry.timestamp}`;
+    if (seen.includes(key)) {
+      duplicateEntryCount += 1;
+      continue;
+    }
+    seen.push(key);
+    acceptedEntryCount += 1;
+    rxDelta += entry.rxBytes;
+    txDelta += entry.txBytes;
+    requestDelta += entry.requestCount;
+  }
+
+  const trimmedSeen = seen.slice(-maxCloudSeenKeys);
+  const intervalSeconds = reportIntervalSeconds(previous.reportedAt, now);
+  const rxBps = intervalSeconds > 0 ? Math.floor(rxDelta / intervalSeconds) : 0;
+  const txBps = intervalSeconds > 0 ? Math.floor(txDelta / intervalSeconds) : 0;
+
+  node.cloud = {
+    status: 'up',
+    reportedAt: now,
+    nodeKey: report.nodeKey,
+    remoteAddress: report.remoteAddress,
+    rxBytes: toNonNegativeNumber(previous.rxBytes) + rxDelta,
+    txBytes: toNonNegativeNumber(previous.txBytes) + txDelta,
+    lastRxBytes: rxDelta,
+    lastTxBytes: txDelta,
+    rxBps,
+    txBps,
+    requestCount: toNonNegativeNumber(previous.requestCount) + requestDelta,
+    lastRequestCount: requestDelta,
+    reportIntervalSeconds: intervalSeconds,
+    lastEntryCount: acceptedEntryCount,
+    duplicateEntryCount: toNonNegativeNumber(previous.duplicateEntryCount) + duplicateEntryCount,
+    secrets: uniqueStrings([
+      ...(Array.isArray(previous.secrets) ? previous.secrets : []),
+      ...report.entries.map((entry) => entry.secret),
+    ]).slice(-200),
+    seen: trimmedSeen,
+  };
+
+  return { acceptedEntryCount, duplicateEntryCount };
+}
+
+function normalizeSeenCloudTrafficKeys(value) {
+  if (!Array.isArray(value)) return [];
+  return uniqueStrings(value.map((item) => trimString(item, 320)).filter(Boolean)).slice(-maxCloudSeenKeys);
+}
+
+function uniqueStrings(values) {
+  return [...new Set(values.map((value) => String(value || '')).filter(Boolean))];
 }
 
 function normalizeCloudTrafficEntries(value) {
@@ -441,20 +530,24 @@ function normalizeHeaders(value) {
   return headers;
 }
 
-function withNodeAgentStatus(node) {
+function withNodeStatus(node) {
   const agent = node.agent || {};
-  const reportedAtMs = agent.reportedAt ? new Date(agent.reportedAt).getTime() : 0;
-  const ageMs = reportedAtMs ? Date.now() - reportedAtMs : null;
-  const stale = !reportedAtMs || ageMs > agentStaleMs;
+  const cloud = node.cloud || {};
+  const agentView = sourceStatus(agent, agentStaleMs);
+  const cloudView = sourceStatus(cloud, cloudStaleMs);
+  const statusSource = chooseStatusSource(cloudView, agentView);
+  const trafficSourceName = cloudView.reportedAt ? 'cloud' : agentView.reportedAt ? 'agent' : '';
+  const trafficSource = trafficSourceName === 'cloud' ? cloud : agent;
+  const primary = statusSource.view;
   let state = 'waiting';
 
   if (node.enabled === false) {
     state = 'disabled';
-  } else if (!reportedAtMs) {
+  } else if (!primary.reportedAt) {
     state = 'waiting';
-  } else if (stale) {
+  } else if (primary.stale) {
     state = 'stale';
-  } else if (agent.status === 'up') {
+  } else if (primary.status === 'up') {
     state = 'up';
   } else {
     state = 'down';
@@ -462,12 +555,73 @@ function withNodeAgentStatus(node) {
 
   return {
     ...node,
+    status: {
+      state,
+      source: statusSource.name,
+      reportedAt: primary.reportedAt,
+      stale: primary.stale,
+      ageSeconds: primary.ageSeconds,
+    },
+    traffic: {
+      source: trafficSourceName,
+      rxBytes: toNonNegativeNumber(trafficSource.rxBytes),
+      txBytes: toNonNegativeNumber(trafficSource.txBytes),
+      lastRxBytes: toNonNegativeNumber(trafficSource.lastRxBytes),
+      lastTxBytes: toNonNegativeNumber(trafficSource.lastTxBytes),
+      rxBps: toNonNegativeNumber(trafficSource.rxBps),
+      txBps: toNonNegativeNumber(trafficSource.txBps),
+      connections: trafficSourceName === 'cloud'
+        ? toNonNegativeNumber(cloud.requestCount)
+        : toNonNegativeNumber(agent.connections),
+      requestCount: toNonNegativeNumber(cloud.requestCount),
+      lastRequestCount: toNonNegativeNumber(cloud.lastRequestCount),
+      reportedAt: primary.reportedAt,
+    },
     agent: {
       ...agent,
-      state,
-      stale,
-      ageSeconds: ageMs === null ? null : Math.max(0, Math.round(ageMs / 1000)),
+      state: agentView.state,
+      stale: agentView.stale,
+      ageSeconds: agentView.ageSeconds,
     },
+    cloud: {
+      ...cloud,
+      state: cloudView.state,
+      stale: cloudView.stale,
+      ageSeconds: cloudView.ageSeconds,
+    },
+  };
+}
+
+function chooseStatusSource(cloudView, agentView) {
+  if (cloudView.reportedAt && !cloudView.stale) return { name: 'cloud', view: cloudView };
+  if (agentView.reportedAt && !agentView.stale) return { name: 'agent', view: agentView };
+  if (cloudView.reportedAt) return { name: 'cloud', view: cloudView };
+  if (agentView.reportedAt) return { name: 'agent', view: agentView };
+  return { name: '', view: cloudView };
+}
+
+function sourceStatus(source, staleMs) {
+  const reportedAtMs = source.reportedAt ? new Date(source.reportedAt).getTime() : 0;
+  const ageMs = reportedAtMs ? Date.now() - reportedAtMs : null;
+  const stale = !reportedAtMs || ageMs > staleMs;
+  let state = 'waiting';
+
+  if (!reportedAtMs) {
+    state = 'waiting';
+  } else if (stale) {
+    state = 'stale';
+  } else if (source.status === 'down') {
+    state = 'down';
+  } else {
+    state = 'up';
+  }
+
+  return {
+    state,
+    status: source.status || '',
+    reportedAt: source.reportedAt || '',
+    stale,
+    ageSeconds: ageMs === null ? null : Math.max(0, Math.round(ageMs / 1000)),
   };
 }
 
@@ -529,13 +683,14 @@ function appendLatencySample(history, agent, reportedAt) {
 
 function nodeLatencySummary(node) {
   const agent = node.agent || {};
+  const status = node.status || {};
   const history = Array.isArray(node.latencyHistory) ? node.latencyHistory : [];
 
   return {
     id: node.id,
     name: node.name || node.id,
-    state: agent.state,
-    reportedAt: agent.reportedAt || '',
+    state: status.state || agent.state,
+    reportedAt: status.reportedAt || agent.reportedAt || '',
     local: agent.latencyMs ?? null,
     cm: agent.probes?.cm?.latencyMs ?? null,
     cu: agent.probes?.cu?.latencyMs ?? null,

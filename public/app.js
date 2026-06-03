@@ -93,7 +93,7 @@ function startTrafficRefresh(container, connectionsLabel) {
         container.innerHTML = payload.html;
       }
       if (connectionsLabel && Number.isFinite(Number(payload.totalConnections))) {
-        connectionsLabel.textContent = `${payload.totalConnections} conns`;
+        connectionsLabel.textContent = `${payload.totalConnections} requests`;
       }
     } catch {
       // Keep the last good values visible when a refresh fails.
@@ -125,6 +125,7 @@ function buildNodeYaml(form) {
   const certBasePath = nodeId && configToken ? `/n/${nodeId}/${configToken}` : '';
   const certUrl = certId && certBasePath ? `${window.location.origin}${certBasePath}/cert` : '';
   const keyUrl = certId && certBasePath ? `${window.location.origin}${certBasePath}/key` : '';
+  const cloudToken = data.get('cloudToken') || nodeId || '';
 
   return [
     'log:',
@@ -155,6 +156,9 @@ function buildNodeYaml(form) {
     '  geoip:',
     '  routes:',
     '    - MATCH,direct',
+    'cloud:',
+    `  nodeKey: ${yamlString(cloudToken)}`,
+    `  url: ${yamlString(window.location.origin)}`,
     '',
   ].join('\n');
 }

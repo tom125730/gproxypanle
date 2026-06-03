@@ -199,11 +199,38 @@ If the update introduces tokenized node config URLs, open `/nodes`, copy each
 node's updated Docker command, and rerun it on that node VPS. Old `/n/:nodeKey`
 config URLs are intentionally rejected.
 
-## Node Monitoring Agent
+## Node Cloud Reporting
 
-The panel does not proxy traffic, so it cannot read real node traffic by itself.
-For uptime and traffic monitoring, install the lightweight agent on each gproxy
-node VPS.
+The panel accepts native gproxy cloud traffic reports at:
+
+```bash
+POST /api/v1/traffic
+```
+
+Generated node configs include:
+
+```yaml
+cloud:
+  nodeKey: <per-node-cloud-token>
+  url: https://your-panel.example
+```
+
+gproxy reports minute-bucket traffic records with `secret`, `timestamp`,
+`rxBytes`, `txBytes`, and `requestCount`. The panel uses the `X-Node-Key`
+header to match the node, deduplicates records by `nodeKey + secret +
+timestamp`, and uses cloud reports as the primary source for node online status
+and traffic totals.
+
+If a node has no traffic, gproxy may not emit a cloud report. The cloud status is
+treated as stale after about 25 minutes without reports.
+
+`/cloud-test` shows the latest raw cloud report batches for troubleshooting.
+
+## Optional Node Monitoring Agent
+
+The native cloud reporter is the primary source for uptime and traffic. The
+lightweight agent can still be installed on each gproxy node VPS as an optional
+fallback for extra TCP probes, host uptime, and remote deploy commands.
 
 After creating or editing a node in `/nodes`, copy the generated Agent command
 from the node table and run it on that node VPS as root. It looks like this:
@@ -241,9 +268,9 @@ The agent uses the per-node `agentToken` shown in the install command. It sends:
 - RX/TX byte counters from `iptables`
 - host uptime
 
-Traffic is currently node-level traffic. The `trafficLimit` field on users is
-stored for planning and display only; it is not enforced yet because gproxy does
-not expose per-subscription-user traffic data to the panel.
+Traffic from cloud reports is node-level and grouped by gproxy `secret`. The
+`trafficLimit` field on users is stored for planning and display only; automatic
+enforcement is not active yet.
 
 The Dashboard keeps a rolling 24-hour latency history per node. It stores up to
 1440 samples per node and automatically drops older samples. `no data` means the

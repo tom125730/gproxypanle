@@ -90,14 +90,14 @@ export function dashboardPage(metrics, authenticated = true) {
       <div class="panel">
         <div class="panel-head">
           <h2>Node Status</h2>
-          <span class="muted">${escapeHtml(metrics.reportingNodes)} reporting</span>
+          <span class="muted">${escapeHtml(metrics.reportingNodes)} reporting via cloud/agent</span>
         </div>
         ${statusChart(metrics)}
       </div>
       <div class="panel">
         <div class="panel-head">
           <h2>Traffic</h2>
-          <span class="muted" data-traffic-connections>${escapeHtml(metrics.totalConnections)} conns</span>
+          <span class="muted" data-traffic-connections>${escapeHtml(metrics.totalConnections)} requests</span>
         </div>
         <div data-traffic-live>
           ${trafficPanelBody(metrics)}
@@ -136,6 +136,7 @@ export function nodesPage(nodes, certs, editingNode = null) {
       <form method="post" action="${action}" class="grid-form node-form" data-node-form>
         ${input('id', 'Node Key', 'hk01', true, node.id || '', isEditing ? 'readonly' : '')}
         <input type="hidden" name="configToken" value="${escapeAttr(node.configToken || '')}">
+        <input type="hidden" name="cloudToken" value="${escapeAttr(node.cloudToken || '')}">
         ${input('name', 'Name', 'Hong Kong 01', false, node.name || '')}
         ${input('host', 'Host', 'hk.example.com', false, node.host || '')}
         ${input('port', 'Port', '443', false, node.port || '443')}
@@ -169,7 +170,7 @@ export function nodesPage(nodes, certs, editingNode = null) {
         html(`${escapeHtml(node.host)}:${escapeHtml(node.port)}<br><span class="muted">${escapeHtml(node.sni || '')}</span>`),
         html(`<a href="/n/${encodeURIComponent(node.id)}/${encodeURIComponent(node.configToken || '')}">config</a>`),
         html(`<button class="copy-command" type="button" data-docker-command data-config-path="/n/${encodeURIComponent(node.id)}/${encodeURIComponent(node.configToken || '')}">Docker command</button>`),
-        html(`<button class="copy-command" type="button" data-agent-command data-node-id="${escapeAttr(node.id)}" data-agent-token="${escapeAttr(node.agentToken)}" data-listen="${escapeAttr(node.listen || `0.0.0.0:${node.port}`)}" data-target-host="${escapeAttr(node.host)}" data-target-port="${escapeAttr(node.port)}">Install agent</button>${agentVersion(node)}`),
+        html(`${cloudVersion(node)}<button class="copy-command optional-agent" type="button" data-agent-command data-node-id="${escapeAttr(node.id)}" data-agent-token="${escapeAttr(node.agentToken)}" data-listen="${escapeAttr(node.listen || `0.0.0.0:${node.port}`)}" data-target-host="${escapeAttr(node.host)}" data-target-port="${escapeAttr(node.port)}">Install agent</button>${agentVersion(node)}`),
         html(`${deployForm(node)}${deployStatus(node.agentCommand)}`),
         html(`<div class="row-actions"><a class="button-link small" href="/nodes/${encodeURIComponent(node.id)}/edit">Edit</a>${deleteForm(`/api/node/${encodeURIComponent(node.id)}`)}</div>`),
       ]))}
@@ -226,17 +227,18 @@ export function cloudTestPage(model) {
         <div>
           <span class="muted">YAML</span>
           <pre>cloud:
-  nodeKey: test-node-key-2
+  nodeKey: &lt;node cloud token&gt;
   url: ${escapeHtml(sampleUrl)}</pre>
         </div>
       </div>
     </section>
     ${latest ? cloudSummary(latest) : ''}
     <section class="table-wrap cloud-test-wrap">
-      ${table(['Received', 'Node Key', 'Entries', 'RX', 'TX', 'Requests', 'Remote'], reports.map((report) => [
+      ${table(['Received', 'Node', 'Node Key', 'Entries', 'RX', 'TX', 'Requests', 'Remote'], reports.map((report) => [
         html(`${escapeHtml(report.receivedAt || '')}<br><span class="muted">${escapeHtml(report.path || '')}</span>`),
+        report.nodeId || '',
         html(`<code>${escapeHtml(report.nodeKey || 'missing')}</code>`),
-        report.entries?.length || 0,
+        html(`${escapeHtml(report.acceptedEntryCount ?? report.entries?.length ?? 0)} accepted<br><span class="muted">${escapeHtml(report.duplicateEntryCount || 0)} duplicate</span>`),
         formatBytes(report.totalRxBytes || 0),
         formatBytes(report.totalTxBytes || 0),
         report.totalRequestCount || 0,
@@ -589,19 +591,20 @@ function latencyClass(value) {
 }
 
 function nodeStatus(node) {
-  const agent = node.agent || {};
+  const status = node.status || node.agent || {};
   const label = {
     up: 'UP',
     down: 'DOWN',
     stale: 'STALE',
     waiting: 'WAITING',
     disabled: 'DISABLED',
-  }[agent.state] || 'WAITING';
-  const latency = agent.latencyMs === null || agent.latencyMs === undefined ? '' : ` ${agent.latencyMs}ms`;
-  const reported = agent.reportedAt ? `${relativeTime(agent.ageSeconds)} ago` : 'never';
-  const error = agent.error ? `<br><span class="muted">${escapeHtml(agent.error)}</span>` : '';
+  }[status.state] || 'WAITING';
+  const source = status.source ? ` via ${status.source}` : '';
+  const latency = node.agent?.latencyMs === null || node.agent?.latencyMs === undefined ? '' : ` ${node.agent.latencyMs}ms`;
+  const reported = status.reportedAt ? `${relativeTime(status.ageSeconds)} ago` : 'never';
+  const error = node.agent?.error ? `<br><span class="muted">${escapeHtml(node.agent.error)}</span>` : '';
 
-  return `<span class="status status-${escapeAttr(agent.state || 'waiting')}">${label}</span><br><span class="muted">${escapeHtml(reported)}${escapeHtml(latency)}</span>${error}`;
+  return `<span class="status status-${escapeAttr(status.state || 'waiting')}">${label}</span><br><span class="muted">${escapeHtml(reported)}${escapeHtml(source)}${escapeHtml(latency)}</span>${error}`;
 }
 
 function nodeProbeStatus(node) {
@@ -626,11 +629,12 @@ function nodeProbeStatus(node) {
 }
 
 function nodeTraffic(node) {
-  const agent = node.agent || {};
-  const rx = formatBytes(agent.rxBytes || 0);
-  const tx = formatBytes(agent.txBytes || 0);
-  const connections = Number(agent.connections || 0);
-  return `<span>RX ${escapeHtml(rx)}</span><br><span>TX ${escapeHtml(tx)}</span><br><span class="muted">${connections} conns</span>`;
+  const traffic = node.traffic || node.agent || {};
+  const rx = formatBytes(traffic.rxBytes || 0);
+  const tx = formatBytes(traffic.txBytes || 0);
+  const count = Number(traffic.connections || traffic.requestCount || 0);
+  const label = traffic.source === 'cloud' ? 'requests' : 'conns';
+  return `<span>RX ${escapeHtml(rx)}</span><br><span>TX ${escapeHtml(tx)}</span><br><span class="muted">${count} ${escapeHtml(label)}</span>`;
 }
 
 function relativeTime(seconds) {
@@ -693,7 +697,15 @@ function table(headers, rows) {
 
 function agentVersion(node) {
   const version = node.agent?.version;
-  return `<div class="agent-version"><span class="muted">agent</span> ${escapeHtml(version || 'n/a')}</div>`;
+  const state = node.agent?.state || 'waiting';
+  return `<div class="agent-version"><span class="muted">agent optional</span> <span class="status status-${escapeAttr(state)}">${escapeHtml(state.toUpperCase())}</span> ${escapeHtml(version || '')}</div>`;
+}
+
+function cloudVersion(node) {
+  const state = node.cloud?.state || 'waiting';
+  const token = node.cloudToken || node.id;
+  const reported = node.cloud?.reportedAt ? `${relativeTime(node.cloud.ageSeconds)} ago` : 'never';
+  return `<div class="agent-version cloud-version"><span class="muted">cloud</span> <span class="status status-${escapeAttr(state)}">${escapeHtml(state.toUpperCase())}</span><br><code>${escapeHtml(token)}</code><br><span class="muted">${escapeHtml(reported)}</span></div>`;
 }
 
 function deleteForm(action) {

@@ -1,8 +1,10 @@
 export function nodeConfigYaml(node, publicBaseUrl = '') {
   const certUrl = node.certId ? absoluteUrl(publicBaseUrl, `/n/${node.id}/${node.configToken}/cert`) : '';
   const keyUrl = node.certId ? absoluteUrl(publicBaseUrl, `/n/${node.id}/${node.configToken}/key`) : '';
+  const cloudUrl = publicBaseUrl ? publicBaseUrl.replace(/\/+$/, '') : '';
+  const cloudNodeKey = node.cloudToken || node.id;
   if (node.yaml && node.yaml.trim()) {
-    return rewriteSavedNodeYaml(node.yaml, certUrl, keyUrl).trimEnd() + '\n';
+    return rewriteSavedNodeYaml(node.yaml, certUrl, keyUrl, cloudUrl, cloudNodeKey).trimEnd() + '\n';
   }
   const secrets = splitList(node.password);
   const wspaths = splitList(node.wspaths);
@@ -36,6 +38,9 @@ export function nodeConfigYaml(node, publicBaseUrl = '') {
     '  geoip:',
     '  routes:',
     '    - MATCH,direct',
+    'cloud:',
+    `  nodeKey: ${yamlString(cloudNodeKey)}`,
+    `  url: ${yamlString(cloudUrl)}`,
     '',
   ].join('\n');
 }
@@ -166,8 +171,13 @@ function absoluteUrl(base, pathname) {
   return `${base.replace(/\/+$/, '')}${pathname}`;
 }
 
-function rewriteSavedNodeYaml(yaml, certUrl, keyUrl) {
-  return String(yaml)
+function rewriteSavedNodeYaml(yaml, certUrl, keyUrl, cloudUrl, cloudNodeKey) {
+  const rewritten = String(yaml)
     .replace(/^(\s*cert:\s*).*/m, `$1${yamlString(certUrl)}`)
     .replace(/^(\s*key:\s*).*/m, `$1${yamlString(keyUrl)}`);
+  const cloudBlock = `cloud:\n  nodeKey: ${yamlString(cloudNodeKey)}\n  url: ${yamlString(cloudUrl)}`;
+  if (/^cloud:\s*$/m.test(rewritten)) {
+    return rewritten.replace(/^cloud:\s*\n(?:[ \t]+[^\n]*\n?)*/m, `${cloudBlock}\n`);
+  }
+  return `${rewritten.trimEnd()}\n${cloudBlock}\n`;
 }
