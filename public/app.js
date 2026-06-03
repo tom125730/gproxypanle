@@ -93,8 +93,9 @@ function startTrafficRefresh(container, connectionsLabel) {
 
       const payload = await response.json();
       if (typeof payload.html === 'string') {
+        const selectedNodeId = container.querySelector('[data-traffic-node-select]')?.value || '';
         container.innerHTML = payload.html;
-        initTrafficTrends(container);
+        initTrafficTrends(container, selectedNodeId);
       }
       if (connectionsLabel && Number.isFinite(Number(payload.totalConnections))) {
         connectionsLabel.textContent = `${payload.totalConnections} requests`;
@@ -117,7 +118,7 @@ function startTrafficRefresh(container, connectionsLabel) {
   refresh();
 }
 
-function initTrafficTrends(root) {
+function initTrafficTrends(root, preferredNodeId = '') {
   root.querySelectorAll('[data-traffic-trend]').forEach((chart) => {
     if (chart.dataset.ready === 'true') return;
     chart.dataset.ready = 'true';
@@ -132,6 +133,10 @@ function initTrafficTrends(root) {
       datasets = [];
     }
     if (!datasets.length) return;
+    const savedNodeId = preferredNodeId || window.localStorage.getItem('gproxyTrafficNodeId') || '';
+    if (select && savedNodeId && datasets.some((item) => item.id === savedNodeId)) {
+      select.value = savedNodeId;
+    }
 
     const render = () => {
       const dataset = datasets.find((item) => item.id === select?.value) || datasets[0];
@@ -139,7 +144,10 @@ function initTrafficTrends(root) {
       if (tokenList) tokenList.innerHTML = renderTrafficTokenList(dataset.secrets || []);
     };
 
-    select?.addEventListener('change', render);
+    select?.addEventListener('change', () => {
+      window.localStorage.setItem('gproxyTrafficNodeId', select.value || '');
+      render();
+    });
     render();
   });
 }
