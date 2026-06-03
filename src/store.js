@@ -6,6 +6,7 @@ const emptyDb = {
   nodes: {},
   certs: {},
   users: {},
+  cloudTrafficReports: [],
   settings: {
     publicBaseUrl: '',
   },
@@ -22,6 +23,8 @@ const defaultNodeSecret = '3c999130';
 const agentStaleMs = 180000;
 const latencyHistoryMs = 24 * 60 * 60 * 1000;
 const maxLatencySamples = 1440;
+const maxCloudTrafficReports = 50;
+const maxCloudTrafficEntries = 200;
 
 export class JsonStore {
   constructor(filePath) {
@@ -203,6 +206,37 @@ export class JsonStore {
     return withNodeAgentStatus(node);
   }
 
+  listCloudTrafficReports() {
+    return Array.isArray(this.db.cloudTrafficReports) ? this.db.cloudTrafficReports : [];
+  }
+
+  async recordCloudTrafficReport(input) {
+    const entries = normalizeCloudTrafficEntries(input.entries);
+    const report = {
+      id: crypto.randomUUID(),
+      receivedAt: new Date().toISOString(),
+      method: trimString(input.method || 'POST', 12),
+      path: trimString(input.path || '/api/v1/traffic', 160),
+      nodeKey: trimString(input.nodeKey, 160),
+      remoteAddress: trimString(input.remoteAddress, 120),
+      headers: normalizeHeaders(input.headers),
+      entries,
+      totalRxBytes: entries.reduce((sum, entry) => sum + entry.rxBytes, 0),
+      totalTxBytes: entries.reduce((sum, entry) => sum + entry.txBytes, 0),
+      totalRequestCount: entries.reduce((sum, entry) => sum + entry.requestCount, 0),
+    };
+
+    const previous = Array.isArray(this.db.cloudTrafficReports) ? this.db.cloudTrafficReports : [];
+    this.db.cloudTrafficReports = [report, ...previous].slice(0, maxCloudTrafficReports);
+    await this.save();
+    return report;
+  }
+
+  async clearCloudTrafficReports() {
+    this.db.cloudTrafficReports = [];
+    await this.save();
+  }
+
   async setNodeAgentCommand(id, command) {
     const node = this.db.nodes[id];
     if (!node) return null;
@@ -347,6 +381,7 @@ function mergeDb(value = {}) {
       nodes,
       certs: value.certs || {},
       users: value.users || {},
+      cloudTrafficReports: normalizeCloudTrafficReports(value.cloudTrafficReports),
       settings: {
         ...emptyDb.settings,
         ...(value.settings || {}),
@@ -364,6 +399,46 @@ function normalizeSecurity(value = {}) {
     twoFactorEnabled: toBool(value.twoFactorEnabled, emptyDb.security.twoFactorEnabled),
     sessionVersion: Math.max(1, Number(value.sessionVersion || emptyDb.security.sessionVersion)),
   };
+}
+
+function normalizeCloudTrafficReports(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, maxCloudTrafficReports).map((report) => {
+    const entries = normalizeCloudTrafficEntries(report.entries);
+    return {
+      id: trimString(report.id, 80) || crypto.randomUUID(),
+      receivedAt: trimString(report.receivedAt, 40),
+      method: trimString(report.method, 12),
+      path: trimString(report.path, 160),
+      nodeKey: trimString(report.nodeKey, 160),
+      remoteAddress: trimString(report.remoteAddress, 120),
+      headers: normalizeHeaders(report.headers),
+      entries,
+      totalRxBytes: toNonNegativeNumber(report.totalRxBytes ?? entries.reduce((sum, entry) => sum + entry.rxBytes, 0)),
+      totalTxBytes: toNonNegativeNumber(report.totalTxBytes ?? entries.reduce((sum, entry) => sum + entry.txBytes, 0)),
+      totalRequestCount: toNonNegativeNumber(report.totalRequestCount ?? entries.reduce((sum, entry) => sum + entry.requestCount, 0)),
+    };
+  });
+}
+
+function normalizeCloudTrafficEntries(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, maxCloudTrafficEntries).map((entry) => ({
+    secret: trimString(entry?.secret, 160),
+    timestamp: toNonNegativeNumber(entry?.timestamp),
+    rxBytes: toNonNegativeNumber(entry?.rxBytes),
+    txBytes: toNonNegativeNumber(entry?.txBytes),
+    requestCount: toNonNegativeNumber(entry?.requestCount),
+  }));
+}
+
+function normalizeHeaders(value) {
+  if (!value || typeof value !== 'object') return {};
+  const headers = {};
+  for (const [key, headerValue] of Object.entries(value).slice(0, 40)) {
+    headers[trimString(key, 80)] = trimString(headerValue, 240);
+  }
+  return headers;
 }
 
 function withNodeAgentStatus(node) {
